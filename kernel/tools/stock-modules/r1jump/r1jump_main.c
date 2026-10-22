@@ -105,6 +105,24 @@ static unsigned int uncached_diff(unsigned long v, size_t len)
 	return n;
 }
 
+/*
+ * Write [v, v + len) back from L1 D (Hit_Writeback_Inv_D) and then L2
+ * (Hit_Writeback_Inv_SD) to RAM. The stub, its params and the page list
+ * are written through KSEG0 but read through KSEG1, which bypasses both
+ * caches; without this the CPU runs stale RAM.
+ */
+static void writeback(unsigned long v, size_t len, u32 dline, u32 sline)
+{
+	unsigned long a, end = v + len;
+
+	for (a = v & ~(unsigned long)(dline - 1); a < end; a += dline)
+		__asm__ __volatile__(".set push\n.set mips32r2\ncache 0x15, 0(%0)\n.set pop" : : "r"(a) : "memory");
+	if (sline)
+		for (a = v & ~(unsigned long)(sline - 1); a < end; a += sline)
+			__asm__ __volatile__(".set push\n.set mips32r2\ncache 0x17, 0(%0)\n.set pop" : : "r"(a) : "memory");
+	__asm__ __volatile__("sync" : : : "memory");
+}
+
 static void l1_geometry(u32 s, u32 l, u32 a, u32 *line, u32 *size)
 {
 	u32 sets = s == 7 ? 32 : 64 << s;
@@ -256,6 +274,10 @@ static int __init r1jump_init(void)
 		params->dline, params->dsize, params->iline, params->isize,
 		params->sline, params->ssize, npages, nrejected, nparked,
 		r1jump_stub_end - r1jump_stub);
+
+	writeback(stub, r1jump_stub_end - r1jump_stub, params->dline, params->sline);
+	writeback(param, sizeof(*params), params->dline, params->sline);
+	writeback(list, npages * 8, params->dline, params->sline);
 
 	if (dry_run) {
 		pr_info("r1jump: uncached view differs: stub %u, params %u, list %u bytes\n",
