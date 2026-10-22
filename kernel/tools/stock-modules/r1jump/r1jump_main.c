@@ -6,22 +6,30 @@
  *
  *   insmod r1jump.ko image=/tmp/vmlinux.bin load=0x80010000 entry=0x80xxxxxx
  *
+ * An image in /tmp costs RAM twice (tmpfs plus the copy). About 15 MB is
+ * free with hiby_player running: enough for a compressed (zboot) kernel,
+ * not for an 8 MB vmlinux.bin. The SD card is on the USB host while ADB is.
+ *
  * The image goes over the stock kernel's own text/data, which no DMA buffer
  * can be in. Source pages are kept out of the destination range so the
  * copy never reads a page it has already overwritten.
  *
+ * Only exported functions are called: inline helpers that read struct page,
+ * struct inode or the zone lists (alloc_page, page_address, i_size_read,
+ * kmalloc, ...) assume a layout that HiBy's build doesn't share. Memory comes
+ * from __get_free_pages as KSEG0 addresses (no highmem on 64 MB), so the
+ * physical address is CPHYSADDR(v).
+ *
  * dry_run=1 does everything except the jump, then frees it all.
+ * wdt_only=1 arms the watchdog for wdt_secs and returns, to check it resets
+ * the R1.
  */
 #include <linux/delay.h>
 #include <linux/fs.h>
 #include <linux/gfp.h>
 #include <linux/io.h>
 #include <linux/kernel.h>
-#include <linux/mm.h>
-#include <linux/sched.h>
 #include <linux/module.h>
-#include <linux/slab.h>
-#include <linux/vmalloc.h>
 #include <asm/mipsregs.h>
 
 static char *image = "/tmp/vmlinux.bin";
@@ -34,6 +42,8 @@ static uint wdt_secs = 30;
 module_param(wdt_secs, uint, 0);
 static bool dry_run;
 module_param(dry_run, bool, 0);
+static bool wdt_only;
+module_param(wdt_only, bool, 0);
 /* Passed to the new kernel in a0..a3 (MIPS boot protocol). */
 static ulong arg0, arg1, arg2, arg3;
 module_param(arg0, ulong, 0);
@@ -50,16 +60,23 @@ struct r1jump_params {
 
 extern char r1jump_stub[], r1jump_stub_end[];
 
-/* X1600 TCU / watchdog (same layout as JZ4740/X1000), at 0x10002000. */
+/*
+ * X1600 watchdog at 0x10002000 (TCU base). The sequence copies the stock
+ * driver's ingenic_wdt_set_timeout, read from its disassembly: TDR is a
+ * 32-bit register (timeout in the low half, ticks * 2 / 3 in the high
+ * half), and TCSR bit 10 clears the counter, as its ping does.
+ */
 #define TCU_PHYS	0x10002000
 #define WDT_TDR		0x00
 #define WDT_TCER	0x04
-#define WDT_TCNT	0x08
 #define WDT_TCSR	0x0c
+#define TCU_TFCR	0x28	/* flag clear */
 #define TCU_TSCR	0x3c	/* timer stop clear */
-#define TSCR_WDT	BIT(16)
+#define TCU_WDT		BIT(16)
+#define TFCR_WDT	BIT(24)
 #define TCSR_RTC_EN	BIT(1)
 #define TCSR_PRESCALE_1024 (5 << 3)
+#define TCSR_CLEAR	BIT(10)
 
 static void arm_watchdog(unsigned int secs)
 {
@@ -67,12 +84,12 @@ static void arm_watchdog(unsigned int secs)
 	/* 32768 Hz RTC clock / 1024 = 32 ticks per second. */
 	u32 ticks = min_t(u32, secs * 32, 0xffff);
 
-	writeb(0, tcu + WDT_TCER);
-	writel(TSCR_WDT, tcu + TCU_TSCR);
-	writew(TCSR_RTC_EN | TCSR_PRESCALE_1024, tcu + WDT_TCSR);
-	writew(ticks, tcu + WDT_TDR);
-	writew(0, tcu + WDT_TCNT);
-	writeb(1, tcu + WDT_TCER);
+	__raw_writeb(0, tcu + WDT_TCER);
+	__raw_writel(TFCR_WDT, tcu + TCU_TFCR);
+	__raw_writel(TCU_WDT, tcu + TCU_TSCR);
+	__raw_writel(ticks | (ticks * 2 / 3) << 16, tcu + WDT_TDR);
+	__raw_writew(TCSR_CLEAR | TCSR_RTC_EN | TCSR_PRESCALE_1024, tcu + WDT_TCSR);
+	__raw_writeb(1, tcu + WDT_TCER);
 }
 
 /* Total index range and line size of a cache from Config1/Config2 fields. */
@@ -84,116 +101,102 @@ static void l1_geometry(u32 s, u32 l, u32 a, u32 *line, u32 *size)
 	*size = *line * sets * (a + 1);
 }
 
-static bool overlaps(phys_addr_t p, size_t len, phys_addr_t lo, phys_addr_t hi)
+/*
+ * Fail rather than wake the OOM killer: it picks hiby_player, whose launcher
+ * then reboots the R1.
+ */
+#define R1JUMP_GFP	(GFP_KERNEL | __GFP_NORETRY | __GFP_NOWARN)
+
+static phys_addr_t dest_lo, dest_hi;
+
+static bool in_dest(unsigned long v, unsigned int order)
 {
-	return p + len > lo && p < hi;
+	phys_addr_t p = CPHYSADDR(v);
+
+	return p + (PAGE_SIZE << order) > dest_lo && p < dest_hi;
 }
 
-static bool in_dest(phys_addr_t p, phys_addr_t lo, phys_addr_t hi)
+/*
+ * Pages that landed inside the destination, kept allocated so the allocator
+ * doesn't hand them out again. Chained through their first word.
+ */
+static unsigned long rejected;
+static unsigned int nrejected;
+
+static void free_rejected(void)
 {
-	return overlaps(p, PAGE_SIZE, lo, hi);
+	while (rejected) {
+		unsigned long next = *(unsigned long *)rejected;
+
+		free_page(rejected);
+		rejected = next;
+	}
 }
 
-struct pagelist {
-	struct page **pages;
-	unsigned int n, cap;
-};
-
-static void pagelist_free(struct pagelist *pl)
-{
-	while (pl->n)
-		__free_page(pl->pages[--pl->n]);
-	kfree(pl->pages);
-}
-
-/* A page that is not inside [lo, hi). Rejected pages are parked in @rej. */
-static struct page *outside_page(phys_addr_t lo, phys_addr_t hi, struct pagelist *rej)
+/* A free page outside the destination, or 0. */
+static unsigned long outside_page(void)
 {
 	for (;;) {
-		struct page *p = alloc_page(GFP_KERNEL);
+		unsigned long v = __get_free_page(R1JUMP_GFP);
 
-		if (!p)
-			return NULL;
-		if (!in_dest(page_to_phys(p), lo, hi))
-			return p;
-		if (rej->n == rej->cap) {
-			unsigned int cap = rej->cap ? rej->cap * 2 : 256;
-			struct page **np = krealloc(rej->pages, cap * sizeof(*np), GFP_KERNEL);
-
-			if (!np) {
-				__free_page(p);
-				return NULL;
-			}
-			rej->pages = np;
-			rej->cap = cap;
-		}
-		rej->pages[rej->n++] = p;
+		if (!v || !in_dest(v, 0))
+			return v;
+		*(unsigned long *)v = rejected;
+		rejected = v;
+		nrejected++;
 	}
 }
 
 static int __init r1jump_init(void)
 {
-	struct pagelist src = {}, rej = {};
-	struct page *stub_page = NULL, *param_page = NULL, *list_pages = NULL;
+	unsigned long stub = 0, param = 0, list = 0, parked[8];
 	struct r1jump_params *params;
-	phys_addr_t lo, hi;
-	u32 *list;
+	unsigned int npages, nloaded = 0, nparked = 0, list_order, i;
+	u32 *pairs = NULL;
 	loff_t size;
 	struct file *f;
-	unsigned int npages, list_order, i;
 	u32 c1, c2;
 	int ret;
 
+	if (wdt_only) {
+		pr_info("r1jump: watchdog only, %u s\n", wdt_secs);
+		arm_watchdog(wdt_secs);
+		return -ECANCELED;
+	}
 	if (!entry)
 		entry = load;
 	f = filp_open(image, O_RDONLY, 0);
 	if (IS_ERR(f))
 		return PTR_ERR(f);
-	size = i_size_read(file_inode(f));
+	size = vfs_llseek(f, 0, SEEK_END);
+	if (size <= 0) {
+		filp_close(f, NULL);
+		return size < 0 ? size : -EINVAL;
+	}
 	npages = DIV_ROUND_UP(size, PAGE_SIZE);
-	lo = CPHYSADDR(load);
-	hi = lo + (phys_addr_t)npages * PAGE_SIZE;
+	dest_lo = CPHYSADDR(load);
+	dest_hi = dest_lo + (phys_addr_t)npages * PAGE_SIZE;
 	pr_info("r1jump: %s, %lld bytes -> 0x%08lx..0x%08lx, entry 0x%08lx\n",
 		image, size, load, load + npages * PAGE_SIZE, entry);
 
-	src.pages = kcalloc(npages, sizeof(*src.pages), GFP_KERNEL);
+	/* The (dst, src) list is contiguous; park blocks that land inside. */
 	list_order = get_order(npages * 8);
 	ret = -ENOMEM;
-	if (!src.pages)
-		goto out;
-	src.cap = npages;
-
-	for (i = 0; i < npages; i++) {
-		struct page *p = outside_page(lo, hi, &rej);
-		loff_t off = (loff_t)i * PAGE_SIZE;
-		int n;
-
-		if (!p) {
-			pr_err("r1jump: no page for image page %u (%u rejected)\n", i, rej.n);
-			goto out;
-		}
-		src.pages[src.n++] = p;
-		memset(page_address(p), 0, PAGE_SIZE);
-		n = kernel_read(f, off, page_address(p), min_t(loff_t, PAGE_SIZE, size - off));
-		if (n < 0) {
-			ret = n;
-			goto out;
-		}
-	}
-
-	stub_page = outside_page(lo, hi, &rej);
-	param_page = outside_page(lo, hi, &rej);
-	/* The pair list must be contiguous: retry until it lands outside. */
 	for (;;) {
-		list_pages = alloc_pages(GFP_KERNEL, list_order);
-		if (!list_pages || !overlaps(page_to_phys(list_pages), PAGE_SIZE << list_order, lo, hi))
+		list = __get_free_pages(R1JUMP_GFP, list_order);
+		if (!list || !in_dest(list, list_order))
 			break;
-		__free_pages(list_pages, list_order);	/* rare; just try again */
-		list_pages = NULL;
-		schedule();
+		if (nparked == ARRAY_SIZE(parked)) {
+			free_pages(list, list_order);
+			list = 0;
+			break;
+		}
+		parked[nparked++] = list;
 	}
-	if (!stub_page || !param_page || !list_pages) {
-		pr_err("r1jump: stub %p params %p list %p (order %u)\n", stub_page, param_page, list_pages, list_order);
+	stub = outside_page();
+	param = outside_page();
+	if (!list || !stub || !param) {
+		pr_err("r1jump: list %lx (order %u) stub %lx params %lx\n", list, list_order, stub, param);
 		goto out;
 	}
 	if (r1jump_stub_end - r1jump_stub > PAGE_SIZE) {
@@ -201,30 +204,46 @@ static int __init r1jump_init(void)
 		goto out;
 	}
 
-	list = page_address(list_pages);
-	for (i = 0; i < npages; i++) {
-		list[2 * i] = lo + i * PAGE_SIZE;
-		list[2 * i + 1] = page_to_phys(src.pages[i]);
-	}
-	memcpy(page_address(stub_page), r1jump_stub, r1jump_stub_end - r1jump_stub);
+	pairs = (u32 *)list;
+	for (; nloaded < npages; nloaded++) {
+		unsigned long v = outside_page();
+		loff_t off = (loff_t)nloaded * PAGE_SIZE;
+		int n;
 
-	params = page_address(param_page);
+		if (!v) {
+			pr_err("r1jump: no page for image page %u (%u rejected)\n", nloaded, nrejected);
+			goto out;
+		}
+		pairs[2 * nloaded] = dest_lo + off;
+		pairs[2 * nloaded + 1] = CPHYSADDR(v);
+		memset((void *)v, 0, PAGE_SIZE);
+		n = kernel_read(f, off, (char *)v, min_t(loff_t, PAGE_SIZE, size - off));
+		if (n < 0) {
+			ret = n;
+			nloaded++;
+			goto out;
+		}
+	}
+	memcpy((void *)stub, r1jump_stub, r1jump_stub_end - r1jump_stub);
+
+	params = (struct r1jump_params *)param;
 	c1 = read_c0_config1();
 	c2 = read_c0_config2();
 	l1_geometry((c1 >> 13) & 7, (c1 >> 10) & 7, (c1 >> 7) & 7, &params->dline, &params->dsize);
 	l1_geometry((c1 >> 22) & 7, (c1 >> 19) & 7, (c1 >> 16) & 7, &params->iline, &params->isize);
 	params->sline = (c2 >> 4) & 0xf ? 2 << ((c2 >> 4) & 0xf) : 0;
 	params->ssize = params->sline ? params->sline * (64 << ((c2 >> 8) & 0xf)) * ((c2 & 0xf) + 1) : 0;
-	params->list = CKSEG1ADDR(page_to_phys(list_pages));
+	params->list = CKSEG1ADDR(CPHYSADDR(list));
 	params->count = npages;
 	params->entry = entry;
 	params->arg[0] = arg0;
 	params->arg[1] = arg1;
 	params->arg[2] = arg2;
 	params->arg[3] = arg3;
-	pr_info("r1jump: D %u/%u I %u/%u L2 %u/%u bytes, %u pages (%u rejected), stub %td bytes\n",
+	pr_info("r1jump: D %u/%u I %u/%u L2 %u/%u bytes, %u pages (%u rejected, %u lists parked), stub %td bytes\n",
 		params->dline, params->dsize, params->iline, params->isize,
-		params->sline, params->ssize, npages, rej.n, r1jump_stub_end - r1jump_stub);
+		params->sline, params->ssize, npages, nrejected, nparked,
+		r1jump_stub_end - r1jump_stub);
 
 	if (dry_run) {
 		pr_info("r1jump: dry run, not jumping\n");
@@ -237,19 +256,21 @@ static int __init r1jump_init(void)
 	arm_watchdog(wdt_secs);
 	local_irq_disable();
 	/* Everything the stub needs is reached through KSEG1 from here on. */
-	((void (*)(unsigned long))CKSEG1ADDR(page_to_phys(stub_page)))(
-		CKSEG1ADDR(page_to_phys(param_page)));
+	((void (*)(unsigned long))CKSEG1ADDR(CPHYSADDR(stub)))(CKSEG1ADDR(CPHYSADDR(param)));
 	unreachable();
 
 out:
-	if (list_pages)
-		__free_pages(list_pages, list_order);
-	if (param_page)
-		__free_page(param_page);
-	if (stub_page)
-		__free_page(stub_page);
-	pagelist_free(&src);
-	pagelist_free(&rej);
+	for (i = 0; i < nloaded; i++)
+		free_page(CKSEG0ADDR(pairs[2 * i + 1]));
+	if (list)
+		free_pages(list, list_order);
+	while (nparked)
+		free_pages(parked[--nparked], list_order);
+	if (param)
+		free_page(param);
+	if (stub)
+		free_page(stub);
+	free_rejected();
 	filp_close(f, NULL);
 	return ret;
 }
