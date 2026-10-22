@@ -14,7 +14,15 @@ mkdir -p "$dir"
 
 dump() {
   # 64 MiB of physical RAM through /dev/mem (the stock kernel allows it).
-  adb exec-out 'dd if=/dev/mem bs=1048576 count=64 2>/dev/null' > "$1"
+  # The R1's adbd predates exec-out and runs shell commands on a pty, so the
+  # bytes go through base64. Nothing is staged in /tmp, which would overwrite
+  # the free RAM being measured. About 2 minutes, so progress goes per 8 MiB.
+  : > "$1"
+  for mib in 0 8 16 24 32 40 48 56; do
+    printf 'dumping MiB %2d..%2d\r' "$mib" "$((mib + 8))" >&2
+    adb shell "dd if=/dev/mem bs=1048576 skip=$mib count=8 2>/dev/null | gzip -1 | base64" \
+      | tr -d '\r' | base64 -d | gunzip >> "$1"
+  done
   echo "dumped $(stat -c %s "$1") bytes to $1"
 }
 
