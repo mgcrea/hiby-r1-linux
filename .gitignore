@@ -1,0 +1,9 @@
+# HiBy's firmware is large and not redistributable: only the scripts and
+# overlay/ are tracked. firmware/build.sh recreates patched/ and out/.
+/firmware/stock/
+/firmware/patched/
+/firmware/out/
+/firmware/test/
+/firmware/device/
+/spike/target/
+.DS_Store
