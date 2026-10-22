@@ -1,0 +1,2 @@
+obj-m := r1jump.o
+r1jump-y := r1jump_main.o stub.o

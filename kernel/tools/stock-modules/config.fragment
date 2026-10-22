@@ -1,0 +1,16 @@
+# Matches the stock kernel's module ABI: vermagic
+# "4.4.94+ preempt mod_unload MIPS32_R2 32BIT".
+CONFIG_LOCALVERSION="+"
+# CONFIG_LOCALVERSION_AUTO is not set
+CONFIG_PREEMPT=y
+CONFIG_MODULES=y
+CONFIG_MODULE_UNLOAD=y
+# CONFIG_MODVERSIONS is not set
+# CONFIG_MODULE_SIG is not set
+CONFIG_CPU_MIPS32_R2=y
+CONFIG_32BIT=y
+# CONFIG_SMP is not set
+CONFIG_KALLSYMS=y
+CONFIG_KALLSYMS_ALL=y
+# The R1 has 64 MiB: no highmem, page_address() is inline.
+# CONFIG_HIGHMEM is not set
