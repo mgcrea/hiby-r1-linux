@@ -7,3 +7,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.4.94.tar.xz | tar -xJ -C /opt
 WORKDIR /opt/linux-4.4.94
+# mipsel glibc, for small static userspace tools such as tools/fbpaint/fbinfo.
+RUN apt-get update && apt-get install -y --no-install-recommends libc6-dev-mipsel-cross \
+    && rm -rf /var/lib/apt/lists/*
