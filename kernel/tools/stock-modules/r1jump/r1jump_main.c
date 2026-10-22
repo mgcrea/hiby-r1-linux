@@ -93,6 +93,18 @@ static void arm_watchdog(unsigned int secs)
 }
 
 /* Total index range and line size of a cache from Config1/Config2 fields. */
+/* Bytes of [v, v + len) that RAM (read through KSEG1) doesn't hold yet. */
+static unsigned int uncached_diff(unsigned long v, size_t len)
+{
+	const u8 *c = (const u8 *)v, *u = (const u8 *)CKSEG1ADDR(CPHYSADDR(v));
+	unsigned int n = 0;
+	size_t i;
+
+	for (i = 0; i < len; i++)
+		n += c[i] != u[i];
+	return n;
+}
+
 static void l1_geometry(u32 s, u32 l, u32 a, u32 *line, u32 *size)
 {
 	u32 sets = s == 7 ? 32 : 64 << s;
@@ -246,6 +258,10 @@ static int __init r1jump_init(void)
 		r1jump_stub_end - r1jump_stub);
 
 	if (dry_run) {
+		pr_info("r1jump: uncached view differs: stub %u, params %u, list %u bytes\n",
+			uncached_diff(stub, r1jump_stub_end - r1jump_stub),
+			uncached_diff(param, sizeof(*params)),
+			uncached_diff(list, npages * 8));
 		pr_info("r1jump: dry run, not jumping\n");
 		ret = -ECANCELED;
 		goto out;
