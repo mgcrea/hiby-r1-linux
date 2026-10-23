@@ -2,9 +2,11 @@
  * r1tone: play a sine on card 0, device 0, to test audio on the mainline
  * kernel.
  *
- *   r1tone [freq_hz [level_dbfs [seconds [rate]]]]   default 440 -30 3 44100
+ *   r1tone [freq_hz [level_dbfs [seconds [rate [channels]]]]]
+ *                                               default 440 -30 3 44100 2
  *
- * Stereo S16_LE, both channels the same.
+ * S16_LE, 1 or 2 channels, the same signal on both. A level of -200 dBFS
+ * plays silence.
  */
 #include <math.h>
 #include <stdio.h>
@@ -20,8 +22,9 @@ int main(int argc, char **argv)
 	double level = argc > 2 ? atof(argv[2]) : -30;
 	double seconds = argc > 3 ? atof(argv[3]) : 3;
 	unsigned int rate = argc > 4 ? atoi(argv[4]) : 44100;
+	unsigned int channels = argc > 5 ? atoi(argv[5]) : 2;
 	struct pcm_config config = {
-		.channels = 2,
+		.channels = channels,
 		.rate = rate,
 		.period_size = PERIOD_FRAMES,
 		.period_count = 4,
@@ -32,8 +35,8 @@ int main(int argc, char **argv)
 	short buf[PERIOD_FRAMES * 2];
 	struct pcm *pcm;
 
-	if (level > 0) {
-		fprintf(stderr, "r1tone: level must be at most 0 dBFS\n");
+	if (level > 0 || channels < 1 || channels > 2) {
+		fprintf(stderr, "r1tone: level must be at most 0 dBFS, channels 1 or 2\n");
 		return 1;
 	}
 	pcm = pcm_open(0, 0, PCM_OUT, &config);
@@ -41,14 +44,16 @@ int main(int argc, char **argv)
 		fprintf(stderr, "r1tone: %s\n", pcm ? pcm_get_error(pcm) : "pcm_open failed");
 		return 1;
 	}
-	printf("r1tone: %.0f Hz at %.0f dBFS for %.1f s, %u Hz\n", freq, level, seconds, rate);
+	printf("r1tone: %.0f Hz at %.0f dBFS for %.1f s, %u Hz, %u ch\n", freq, level, seconds, rate, channels);
 	while (frames > 0) {
 		int n = frames < PERIOD_FRAMES ? frames : PERIOD_FRAMES, i;
 
 		for (i = 0; i < n; i++) {
 			short v = amp * sin(phase);
 
-			buf[2 * i] = buf[2 * i + 1] = v;
+			buf[channels * i] = v;
+			if (channels == 2)
+				buf[2 * i + 1] = v;
 			phase += 2 * M_PI * freq / rate;
 			if (phase > 2 * M_PI)
 				phase -= 2 * M_PI;
