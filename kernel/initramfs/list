@@ -23,3 +23,14 @@ file /init /r1/initramfs/init 0755 0 0
 file /sbin/r1-reboot /r1/initramfs/r1-reboot 0755 0 0
 file /usr/bin/tinymix /opt/tinyalsa/tinymix 0755 0 0
 file /usr/bin/r1tone /src/build-arm64/r1tone 0755 0 0
+# Bluetooth: BlueZ and bluez-alsa come from the card (tools/sdsync.sh).
+dir /etc 0755 0 0
+dir /etc/dbus-1 0755 0 0
+file /etc/dbus-1/system.conf /r1/initramfs/dbus.conf 0644 0 0
+# dbus resolves its clients' uid (EXTERNAL authentication).
+file /etc/passwd /r1/initramfs/passwd 0644 0 0
+file /etc/group /r1/initramfs/group 0644 0 0
+file /etc/nsswitch.conf /r1/initramfs/nsswitch.conf 0644 0 0
+file /sbin/r1-bt /r1/initramfs/r1-bt 0755 0 0
+# The USB gadget: serial and ADB (adbd from the card).
+file /sbin/r1-usb /r1/initramfs/r1-usb 0755 0 0

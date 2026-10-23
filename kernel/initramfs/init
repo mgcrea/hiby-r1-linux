@@ -4,12 +4,16 @@ mount -t proc proc /proc
 mount -t sysfs sys /sys
 # The kernel only auto-mounts devtmpfs on a real root, not an initramfs.
 mount -t devtmpfs dev /dev
+# Pseudo-terminals: r1player runs bluetoothctl on one, which buffers its
+# output on a pipe.
+mkdir -p /dev/pts && mount -t devpts devpts /dev/pts
 echo
 echo "HiBy R1: Linux $(uname -r) is up"
 grep -E "system type|cpu model|BogoMIPS" /proc/cpuinfo
 free
 
-# A shell on the USB serial gadget (/dev/cu.usbmodem* on the Mac).
+# A shell on the USB serial gadget (/dev/cu.usbmodem* on the Mac), once
+# r1-usb has created it below.
 ( while :; do setsid getty -n -l /bin/sh 115200 ttyGS0 vt100; sleep 1; done ) &
 
 # The SD card, read-only until writes are trusted.
@@ -19,6 +23,28 @@ if mount -t exfat -o ro /dev/mmcblk0p1 /mnt/sd_0; then
 else
 	echo "SD card: not mounted"; ls /dev | grep mmc
 fi
+# What has to outlive a restart lives on the card, in $R1_STATE: r1player
+# copies its settings and scores there, and bluetoothd's pairings, in a
+# short read-write window. Put them back where r1player and bluetoothd
+# look, which are in RAM, before either starts. (HiBy built bluetoothd
+# with its storage in /usr/data/bluetooth, not /var/lib/bluetooth.)
+export R1_STATE=/mnt/sd_0/.r1-mainline/state
+mkdir -p /usr/data/r1player /usr/data/bluetooth
+for f in settings scores; do
+	[ -f $R1_STATE/$f ] && cp $R1_STATE/$f /usr/data/r1player/
+done
+# The pairings come as a tar of /usr/data/bluetooth: exFAT refuses BlueZ's
+# directory names, which are addresses with colons.
+[ -f $R1_STATE/bluetooth.tar ] && tar -xf $R1_STATE/bluetooth.tar -C /usr/data
+# The USB gadget (serial shell, and ADB when adbd is on the card), after the
+# card since adbd lives there.
+/sbin/r1-usb > /tmp/usb.log 2>&1
+# Bluetooth, when tools/sdsync.sh put its userspace on the card; in the
+# background, since setting the chip up takes a few seconds. Its tools
+# (bluetoothctl, bluealsa-cli) are on r1player's PATH.
+/sbin/r1-bt > /tmp/bt.log 2>&1 &
+export PATH=$PATH:/mnt/sd_0/.r1-mainline/bt
+
 # r1player, when tools/sdsync.sh put it on the card. The console gives the
 # screen up first: fbcon would draw kernel messages over the player.
 # /usr/data/r1player (its index) is in RAM, so the index is rebuilt at

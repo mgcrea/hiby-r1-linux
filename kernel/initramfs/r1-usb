@@ -1,0 +1,43 @@
+#!/bin/sh
+# The USB gadget: the serial shell (ttyGS0, for tools/r1sh.py) and, when
+# tools/sdsync.sh put the stock adbd on the card, ADB through FunctionFS,
+# as the stock /etc/init.d/adb/S440adb sets it up. Without adbd, or when it
+# doesn't come up, the gadget is the serial port alone.
+ML=/mnt/sd_0/.r1-mainline
+G=/sys/kernel/config/usb_gadget/r1
+
+mount -t configfs none /sys/kernel/config
+mkdir $G && cd $G || exit 1
+# Stock's ADB IDs. tools/r1sh.py finds the port by the product name, so it
+# keeps the "Gadget Serial" of the kernel's old g_serial.
+echo 0x18d1 > idVendor
+echo 0xd002 > idProduct
+mkdir strings/0x409
+echo HiBy > strings/0x409/manufacturer
+echo "Gadget Serial and ADB" > strings/0x409/product
+echo r1-mainline > strings/0x409/serialnumber
+mkdir configs/c.1 configs/c.1/strings/0x409
+echo serial+adb > configs/c.1/strings/0x409/configuration
+echo 500 > configs/c.1/MaxPower
+
+mkdir functions/acm.GS0
+ln -s functions/acm.GS0 configs/c.1
+
+if [ -x $ML/adbd ]; then
+	# adbd listens on 127.0.0.1:5037 and exits when it can't.
+	ifconfig lo 127.0.0.1 up
+	mkdir functions/ffs.adb
+	mkdir -p /dev/usb-ffs/adb
+	mount -t functionfs adb /dev/usb-ffs/adb
+	ln -s functions/ffs.adb configs/c.1
+	# adbd writes its descriptors to ep0, which creates ep1 and ep2; the
+	# gadget can only be bound after that.
+	( while :; do $ML/adbd; echo "adbd exited with $?"; sleep 1; done ) > /tmp/adb.log 2>&1 &
+	i=0
+	while [ ! -e /dev/usb-ffs/adb/ep1 ] && [ $i -lt 30 ]; do usleep 100000; i=$((i + 1)); done
+	if [ ! -e /dev/usb-ffs/adb/ep1 ]; then
+		echo "adbd did not come up: serial only"
+		rm configs/c.1/ffs.adb
+	fi
+fi
+ls /sys/class/udc > UDC

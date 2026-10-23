@@ -1,0 +1,36 @@
+#!/bin/sh
+# Bluetooth under mainline: the stock system's BlueZ and bluez-alsa, which
+# tools/sdsync.sh copies to the card, as the stock bt_init starts them,
+# with the kernel's hci_bcm in place of brcm_patchram_plus.
+ML=/mnt/sd_0/.r1-mainline
+BT=$ML/bt
+[ -x $BT/bluetoothd ] || { echo "no Bluetooth userspace on the card"; exit 0; }
+
+# hci_bcm first set the chip up before the card, which holds its firmware
+# (/lib/firmware/brcm/BCM43430A1.hcd, /lib being on the card), was mounted:
+# bind it again to load the firmware.
+drv=/sys/bus/serial/drivers/hci_uart_bcm
+dev=$(ls $drv 2>/dev/null | grep '^serial')
+if [ -e /lib/firmware/brcm/BCM43430A1.hcd ] && [ -n "$dev" ]; then
+	echo $dev > $drv/unbind
+	echo $dev > $drv/bind
+fi
+i=0
+while [ ! -e /sys/class/bluetooth/hci0 ] && [ $i -lt 50 ]; do usleep 100000; i=$((i + 1)); done
+[ -e /sys/class/bluetooth/hci0 ] || { echo "no hci0"; exit 1; }
+
+# The chip keeps the address in the AP6212 module's OTP (the stock system
+# replaces it with one it makes up; mainline doesn't need stock's).
+
+mkdir -p /var/run/dbus /var/lib/dbus /usr/data/bluetooth
+tr -d - < /proc/sys/kernel/random/uuid > /var/lib/dbus/machine-id
+$BT/dbus-daemon --config-file=/etc/dbus-1/system.conf --nopidfile --fork
+# -E: experimental interfaces, as stock.
+$BT/bluetoothd -n -E &
+sleep 1
+( while :; do
+	$BT/bluealsa -p a2dp-source --a2dp-volume
+	echo "bluealsa exited with $?"
+	sleep 1
+done ) &
+echo "bluetoothd and bluealsa started"
