@@ -34,13 +34,14 @@ adb shell 'while [ "$(cat /sys/class/backlight/backlight_pwm0/brightness)" = 0 ]
 
 echo "[$(date +%T)] jumping (watchdog $wdt s)"
 adb shell "insmod /tmp/r1jump.ko image=/tmp/r1-linux.bin load=0x80100000 entry=$entry wdt_secs=$wdt" &
+# Mainline has its serial shell up about 3 s after the jump.
 port=
-for i in $(seq 1 60); do
+for i in $(seq 1 20); do
 	port=$(python3 -I "$here/tools/r1sh.py" --port) && break
 	sleep 1
 done
 if [ -z "$port" ]; then
-	echo "[$(date +%T)] no R1 serial port after 60 s"
+	echo "[$(date +%T)] no R1 serial port after 20 s"
 	exit 1
 fi
 echo "[$(date +%T)] up on $port"
