@@ -1,0 +1,360 @@
+From d0f3593c1ee49eee1a3745b6ef3112068423c434 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 07:39:55 +0000
+Subject: [PATCH 14/16] iio: adc: add the Ingenic X1600 ADC
+
+The X1600's SAR ADC has four auxiliary channels, each with its own start
+bit, interrupt flag and 12-bit result, and none of the touchscreen or
+battery engines of the JZ47xx ADCs that ingenic-adc drives. Add a small
+driver that exposes the four channels as voltages against the 3.3 V
+reference.
+
+The register layout and clock dividers come from the vendor 4.4 kernel;
+on a HiBy R1 the channels carry the buttons, the headphone jack and the
+headset remote.
+---
+ .../bindings/iio/adc/ingenic,x1600-adc.yaml   |  62 +++++
+ drivers/iio/adc/Kconfig                       |  10 +
+ drivers/iio/adc/Makefile                      |   1 +
+ drivers/iio/adc/ingenic-x1600-adc.c           | 227 ++++++++++++++++++
+ 4 files changed, 300 insertions(+)
+ create mode 100644 Documentation/devicetree/bindings/iio/adc/ingenic,x1600-adc.yaml
+ create mode 100644 drivers/iio/adc/ingenic-x1600-adc.c
+
+diff --git a/Documentation/devicetree/bindings/iio/adc/ingenic,x1600-adc.yaml b/Documentation/devicetree/bindings/iio/adc/ingenic,x1600-adc.yaml
+new file mode 100644
+index 0000000..35e94b3
+--- /dev/null
++++ b/Documentation/devicetree/bindings/iio/adc/ingenic,x1600-adc.yaml
+@@ -0,0 +1,62 @@
++# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
++%YAML 1.2
++---
++$id: http://devicetree.org/schemas/iio/adc/ingenic,x1600-adc.yaml#
++$schema: http://devicetree.org/meta-schemas/core.yaml#
++
++title: Ingenic X1600 ADC
++
++maintainers:
++  - Olivier Louvignes <olivier@mgcrea.io>
++
++description:
++  The SAR ADC of the Ingenic X1600 SoC, with four auxiliary input channels
++  measured against a 3.3 V reference. Its clients select a channel by index
++  through "io-channels".
++
++properties:
++  compatible:
++    const: ingenic,x1600-adc
++
++  reg:
++    maxItems: 1
++
++  clocks:
++    maxItems: 1
++
++  clock-names:
++    items:
++      - const: adc
++
++  interrupts:
++    maxItems: 1
++
++  '#io-channel-cells':
++    const: 1
++
++required:
++  - compatible
++  - reg
++  - clocks
++  - clock-names
++  - interrupts
++  - '#io-channel-cells'
++
++additionalProperties: false
++
++examples:
++  - |
++    #include <dt-bindings/clock/ingenic,x1600-cgu.h>
++
++    adc@10070000 {
++        compatible = "ingenic,x1600-adc";
++        reg = <0x10070000 0x30>;
++
++        clocks = <&cgu X1600_CLK_SADC>;
++        clock-names = "adc";
++
++        interrupt-parent = <&intc>;
++        interrupts = <11>;
++
++        #io-channel-cells = <1>;
++    };
+diff --git a/drivers/iio/adc/Kconfig b/drivers/iio/adc/Kconfig
+index 415e519..4e20cfe 100644
+--- a/drivers/iio/adc/Kconfig
++++ b/drivers/iio/adc/Kconfig
+@@ -853,6 +853,16 @@ config INGENIC_ADC
+ 	  This driver can also be built as a module. If so, the module will be
+ 	  called ingenic_adc.
+ 
++config INGENIC_X1600_ADC
++	tristate "Ingenic X1600 ADC driver"
++	depends on MIPS || COMPILE_TEST
++	help
++	  Say yes here to build support for the SAR ADC of the Ingenic X1600
++	  SoC and its four auxiliary channels.
++
++	  This driver can also be built as a module. If so, the module will be
++	  called ingenic-x1600-adc.
++
+ config INTEL_DC_TI_ADC
+ 	tristate "Intel Bay Trail / Cherry Trail Dollar Cove TI ADC driver"
+ 	depends on INTEL_SOC_PMIC_CHTDC_TI
+diff --git a/drivers/iio/adc/Makefile b/drivers/iio/adc/Makefile
+index dcec0ab..ddc6216 100644
+--- a/drivers/iio/adc/Makefile
++++ b/drivers/iio/adc/Makefile
+@@ -75,6 +75,7 @@ obj-$(CONFIG_IMX8QXP_ADC) += imx8qxp-adc.o
+ obj-$(CONFIG_IMX93_ADC) += imx93_adc.o
+ obj-$(CONFIG_INA2XX_ADC) += ina2xx-adc.o
+ obj-$(CONFIG_INGENIC_ADC) += ingenic-adc.o
++obj-$(CONFIG_INGENIC_X1600_ADC) += ingenic-x1600-adc.o
+ obj-$(CONFIG_INTEL_DC_TI_ADC) += intel_dc_ti_adc.o
+ obj-$(CONFIG_INTEL_MRFLD_ADC) += intel_mrfld_adc.o
+ obj-$(CONFIG_LP8788_ADC) += lp8788_adc.o
+diff --git a/drivers/iio/adc/ingenic-x1600-adc.c b/drivers/iio/adc/ingenic-x1600-adc.c
+new file mode 100644
+index 0000000..d54f6d7
+--- /dev/null
++++ b/drivers/iio/adc/ingenic-x1600-adc.c
+@@ -0,0 +1,227 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * ADC driver for the Ingenic X1600 SoC
++ *
++ * The X1600's SAR ADC has four auxiliary channels, each with its own start
++ * bit, interrupt and 12-bit result, and none of the touchscreen or battery
++ * engines of the JZ47xx ADCs that ingenic-adc drives. The register layout
++ * and the clock set-up were read from the vendor 4.4 kernel's driver.
++ */
++
++#include <linux/bitfield.h>
++#include <linux/clk.h>
++#include <linux/completion.h>
++#include <linux/delay.h>
++#include <linux/iio/iio.h>
++#include <linux/interrupt.h>
++#include <linux/io.h>
++#include <linux/mod_devicetable.h>
++#include <linux/module.h>
++#include <linux/mutex.h>
++#include <linux/platform_device.h>
++
++#define X1600_ADC_REG_ENABLE		0x00
++#define X1600_ADC_REG_CTRL		0x08
++#define X1600_ADC_REG_STATUS		0x0c
++#define X1600_ADC_REG_DATA(ch)		(0x10 + ((ch) / 2) * 4)
++#define X1600_ADC_REG_CLKDIV		0x20
++#define X1600_ADC_REG_STABLE		0x24
++
++/* ENABLE: bits 3..0 start a channel's conversion; bit 15 powers down. */
++#define X1600_ADC_ENABLE_POWER_DOWN	BIT(15)
++/* CTRL: bits 3..0 mask the channels' interrupts. STATUS: write 1 to clear. */
++#define X1600_ADC_CHANNELS_MASK		GENMASK(3, 0)
++#define X1600_ADC_DATA_MASK(ch)		(GENMASK(11, 0) << ((ch) % 2 * 16))
++#define X1600_ADC_CLKDIV_DIV0		GENMASK(7, 0)
++#define X1600_ADC_CLKDIV_DIV1		GENMASK(15, 8)
++#define X1600_ADC_CLKDIV_DIV2		GENMASK(31, 16)
++#define X1600_ADC_STABLE_TIME		GENMASK(15, 0)
++
++#define X1600_ADC_NUM_CHANNELS		4
++#define X1600_ADC_VREF_MV		3300
++#define X1600_ADC_BITS			12
++/* The vendor kernel brings its 140 MHz APB clock down to about this. */
++#define X1600_ADC_CLK_RATE		1166667
++#define X1600_ADC_TIMEOUT_MS		20
++
++struct x1600_adc {
++	void __iomem *base;
++	struct clk *clk;
++	struct completion done;
++	/* Serialises conversions: there is one completion for all channels. */
++	struct mutex lock;
++};
++
++static irqreturn_t x1600_adc_irq(int irq, void *data)
++{
++	struct x1600_adc *adc = data;
++	u32 status = readl(adc->base + X1600_ADC_REG_STATUS) & X1600_ADC_CHANNELS_MASK;
++
++	if (!status)
++		return IRQ_NONE;
++
++	writel(status, adc->base + X1600_ADC_REG_STATUS);
++	complete(&adc->done);
++	return IRQ_HANDLED;
++}
++
++static int x1600_adc_read_raw_channel(struct x1600_adc *adc, unsigned int ch, int *val)
++{
++	u32 data;
++	int ret = 0;
++
++	guard(mutex)(&adc->lock);
++
++	reinit_completion(&adc->done);
++	writel(BIT(ch), adc->base + X1600_ADC_REG_STATUS);
++	writel(readl(adc->base + X1600_ADC_REG_ENABLE) | BIT(ch),
++	       adc->base + X1600_ADC_REG_ENABLE);
++
++	if (!wait_for_completion_timeout(&adc->done,
++					 msecs_to_jiffies(X1600_ADC_TIMEOUT_MS)))
++		ret = -ETIMEDOUT;
++
++	writel(readl(adc->base + X1600_ADC_REG_ENABLE) & ~BIT(ch),
++	       adc->base + X1600_ADC_REG_ENABLE);
++	if (ret)
++		return ret;
++
++	data = readl(adc->base + X1600_ADC_REG_DATA(ch));
++	*val = (data & X1600_ADC_DATA_MASK(ch)) >> (ch % 2 * 16);
++	return 0;
++}
++
++static int x1600_adc_read_raw(struct iio_dev *iio_dev,
++			      struct iio_chan_spec const *chan,
++			      int *val, int *val2, long mask)
++{
++	struct x1600_adc *adc = iio_priv(iio_dev);
++	int ret;
++
++	switch (mask) {
++	case IIO_CHAN_INFO_RAW:
++		ret = x1600_adc_read_raw_channel(adc, chan->channel, val);
++		return ret ? ret : IIO_VAL_INT;
++	case IIO_CHAN_INFO_SCALE:
++		*val = X1600_ADC_VREF_MV;
++		*val2 = X1600_ADC_BITS;
++		return IIO_VAL_FRACTIONAL_LOG2;
++	default:
++		return -EINVAL;
++	}
++}
++
++static const struct iio_info x1600_adc_info = {
++	.read_raw = x1600_adc_read_raw,
++};
++
++#define X1600_ADC_CHANNEL(ch) {					\
++	.type = IIO_VOLTAGE,					\
++	.indexed = 1,						\
++	.channel = (ch),					\
++	.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),		\
++	.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE),	\
++}
++
++static const struct iio_chan_spec x1600_adc_channels[] = {
++	X1600_ADC_CHANNEL(0),
++	X1600_ADC_CHANNEL(1),
++	X1600_ADC_CHANNEL(2),
++	X1600_ADC_CHANNEL(3),
++};
++
++static void x1600_adc_power_down(void *data)
++{
++	struct x1600_adc *adc = data;
++
++	writel(X1600_ADC_CHANNELS_MASK, adc->base + X1600_ADC_REG_CTRL);
++	writel(X1600_ADC_ENABLE_POWER_DOWN, adc->base + X1600_ADC_REG_ENABLE);
++}
++
++static int x1600_adc_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct iio_dev *iio_dev;
++	struct x1600_adc *adc;
++	unsigned long rate;
++	u32 div0, reg;
++	int irq, ret;
++
++	iio_dev = devm_iio_device_alloc(dev, sizeof(*adc));
++	if (!iio_dev)
++		return -ENOMEM;
++
++	adc = iio_priv(iio_dev);
++	init_completion(&adc->done);
++	ret = devm_mutex_init(dev, &adc->lock);
++	if (ret)
++		return ret;
++
++	adc->base = devm_platform_ioremap_resource(pdev, 0);
++	if (IS_ERR(adc->base))
++		return PTR_ERR(adc->base);
++
++	adc->clk = devm_clk_get_enabled(dev, "adc");
++	if (IS_ERR(adc->clk))
++		return dev_err_probe(dev, PTR_ERR(adc->clk), "Unable to get clock\n");
++
++	/* Powered down, interrupts masked and cleared, as the vendor does. */
++	writel(X1600_ADC_ENABLE_POWER_DOWN, adc->base + X1600_ADC_REG_ENABLE);
++	writel(X1600_ADC_CHANNELS_MASK, adc->base + X1600_ADC_REG_CTRL);
++	writel(X1600_ADC_CHANNELS_MASK, adc->base + X1600_ADC_REG_STATUS);
++
++	rate = clk_get_rate(adc->clk);
++	div0 = clamp(DIV_ROUND_UP(rate, X1600_ADC_CLK_RATE), 1UL, 256UL) - 1;
++	/* DIV1 and DIV2 as the vendor kernel sets them. */
++	writel(FIELD_PREP(X1600_ADC_CLKDIV_DIV0, div0) |
++	       FIELD_PREP(X1600_ADC_CLKDIV_DIV1, 1) |
++	       FIELD_PREP(X1600_ADC_CLKDIV_DIV2, 99),
++	       adc->base + X1600_ADC_REG_CLKDIV);
++	reg = readl(adc->base + X1600_ADC_REG_STABLE) & ~X1600_ADC_STABLE_TIME;
++	writel(reg | FIELD_PREP(X1600_ADC_STABLE_TIME, 1),
++	       adc->base + X1600_ADC_REG_STABLE);
++
++	irq = platform_get_irq(pdev, 0);
++	if (irq < 0)
++		return irq;
++
++	ret = devm_request_irq(dev, irq, x1600_adc_irq, 0, dev_name(dev), adc);
++	if (ret)
++		return dev_err_probe(dev, ret, "Failed to request irq\n");
++
++	/*
++	 * Powered up for good: the keys poll it every few tens of milliseconds,
++	 * and powering up takes 2 ms.
++	 */
++	writel(0, adc->base + X1600_ADC_REG_ENABLE);
++	usleep_range(2000, 3000);
++	writel(0, adc->base + X1600_ADC_REG_CTRL);
++	ret = devm_add_action_or_reset(dev, x1600_adc_power_down, adc);
++	if (ret)
++		return ret;
++
++	iio_dev->name = "x1600-adc";
++	iio_dev->modes = INDIO_DIRECT_MODE;
++	iio_dev->channels = x1600_adc_channels;
++	iio_dev->num_channels = ARRAY_SIZE(x1600_adc_channels);
++	iio_dev->info = &x1600_adc_info;
++
++	return devm_iio_device_register(dev, iio_dev);
++}
++
++static const struct of_device_id x1600_adc_of_match[] = {
++	{ .compatible = "ingenic,x1600-adc" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, x1600_adc_of_match);
++
++static struct platform_driver x1600_adc_driver = {
++	.driver = {
++		.name = "ingenic-x1600-adc",
++		.of_match_table = x1600_adc_of_match,
++	},
++	.probe = x1600_adc_probe,
++};
++module_platform_driver(x1600_adc_driver);
++MODULE_DESCRIPTION("ADC driver for the Ingenic X1600 SoC");
++MODULE_LICENSE("GPL");
+-- 
+2.39.5
+

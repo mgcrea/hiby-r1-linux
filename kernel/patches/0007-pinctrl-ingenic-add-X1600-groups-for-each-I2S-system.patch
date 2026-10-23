@@ -1,7 +1,7 @@
 From b1d5a98e07126b5773540a5cfdf861f4e871db4b Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:02:43 +0000
-Subject: [PATCH 07/14] pinctrl: ingenic: add X1600 groups for each I2S system
+Subject: [PATCH 07/16] pinctrl: ingenic: add X1600 groups for each I2S system
  clock
 
 The X1600 has a system clock (MCLK) pin for each direction: PB22 for
