@@ -9,7 +9,15 @@ dir /usr 0755 0 0
 dir /usr/bin 0755 0 0
 dir /usr/sbin 0755 0 0
 dir /mnt 0755 0 0
-dir /mnt/sd 0755 0 0
+dir /mnt/sd_0 0755 0 0
+dir /tmp 1777 0 0
+# r1player, its glibc and its font live on the SD card (tools/sdsync.sh).
+slink /lib /mnt/sd_0/.r1-mainline/lib 0777 0 0
+dir /usr/data 0755 0 0
+dir /usr/data/r1player 0755 0 0
+dir /usr/resource 0755 0 0
+dir /usr/resource/fonts 0755 0 0
+slink /usr/resource/fonts/default.otf /mnt/sd_0/.r1-mainline/default.otf 0777 0 0
 file /bin/busybox /bin/busybox 0755 0 0
 file /init /r1/initramfs/init 0755 0 0
 file /sbin/r1-reboot /r1/initramfs/r1-reboot 0755 0 0
