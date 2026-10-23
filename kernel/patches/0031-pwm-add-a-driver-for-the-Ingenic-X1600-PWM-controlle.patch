@@ -1,0 +1,259 @@
+From 41cc359853291326b3a2eb9af5b4637c68c70819 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 09:10:36 +0000
+Subject: [PATCH 31/33] pwm: add a driver for the Ingenic X1600 PWM controller
+
+The X1600 has a PWM controller of its own, separate from the TCU timers that
+pwm-jz4740 drives on earlier Ingenic SoCs: eight channels, each with a
+power-of-two clock divider and a waveform word that holds the counts at the
+level a period starts with and the counts at the other level. A waveform
+word needs at least one count of each level, so a duty cycle of 0 or 100% is
+done by switching the channel off with its idle level set accordingly.
+
+The register layout comes from the vendor kernel's driver, as rewritten under
+the GPL for HiBy's players.
+---
+ drivers/pwm/Kconfig             |  11 ++
+ drivers/pwm/Makefile            |   1 +
+ drivers/pwm/pwm-ingenic-x1600.c | 195 ++++++++++++++++++++++++++++++++
+ 3 files changed, 207 insertions(+)
+ create mode 100644 drivers/pwm/pwm-ingenic-x1600.c
+
+diff --git a/drivers/pwm/Kconfig b/drivers/pwm/Kconfig
+index 7297760..244c8f4 100644
+--- a/drivers/pwm/Kconfig
++++ b/drivers/pwm/Kconfig
+@@ -381,6 +381,17 @@ config PWM_JZ4740
+ 	  To compile this driver as a module, choose M here: the module
+ 	  will be called pwm-jz4740.
+ 
++config PWM_INGENIC_X1600
++	tristate "Ingenic X1600 PWM support"
++	depends on MACH_INGENIC || COMPILE_TEST
++	depends on COMMON_CLK && OF && HAS_IOMEM
++	help
++	  Generic PWM framework driver for the PWM controller of the
++	  Ingenic X1600.
++
++	  To compile this driver as a module, choose M here: the module
++	  will be called pwm-ingenic-x1600.
++
+ config PWM_KEEMBAY
+ 	tristate "Intel Keem Bay PWM driver"
+ 	depends on ARCH_KEEMBAY || COMPILE_TEST
+diff --git a/drivers/pwm/Makefile b/drivers/pwm/Makefile
+index 5630a52..5c59b54 100644
+--- a/drivers/pwm/Makefile
++++ b/drivers/pwm/Makefile
+@@ -31,6 +31,7 @@ obj-$(CONFIG_PWM_IMX_TPM)	+= pwm-imx-tpm.o
+ obj-$(CONFIG_PWM_INTEL_LGM)	+= pwm-intel-lgm.o
+ obj-$(CONFIG_PWM_IPQ)		+= pwm-ipq.o
+ obj-$(CONFIG_PWM_IQS620A)	+= pwm-iqs620a.o
++obj-$(CONFIG_PWM_INGENIC_X1600)	+= pwm-ingenic-x1600.o
+ obj-$(CONFIG_PWM_JZ4740)	+= pwm-jz4740.o
+ obj-$(CONFIG_PWM_KEEMBAY)	+= pwm-keembay.o
+ obj-$(CONFIG_PWM_LOONGSON)	+= pwm-loongson.o
+diff --git a/drivers/pwm/pwm-ingenic-x1600.c b/drivers/pwm/pwm-ingenic-x1600.c
+new file mode 100644
+index 0000000..9756885
+--- /dev/null
++++ b/drivers/pwm/pwm-ingenic-x1600.c
+@@ -0,0 +1,195 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * PWM controller of the Ingenic X1600
++ *
++ * Eight channels, each with a power-of-two clock divider and a waveform word:
++ * the counts at the level the period starts with, and the counts at the other
++ * level. Unlike the JZ47xx and X1000, whose PWMs are TCU timer channels
++ * (pwm-jz4740), the X1600 has this separate controller. The register layout
++ * comes from the vendor kernel's driver, as rewritten under the GPL for
++ * HiBy's players.
++ *
++ * Limitations:
++ * - A waveform word holds at least one count of each level, so a duty cycle
++ *   of 0 or 100% switches the channel off and holds the output at the idle
++ *   level instead.
++ * - A new waveform takes effect at the end of the current period.
++ */
++
++#include <linux/bitfield.h>
++#include <linux/clk.h>
++#include <linux/io.h>
++#include <linux/iopoll.h>
++#include <linux/math64.h>
++#include <linux/mod_devicetable.h>
++#include <linux/module.h>
++#include <linux/mutex.h>
++#include <linux/platform_device.h>
++#include <linux/pwm.h>
++
++#define X1600_PWM_ENS			0x00	/* write 1: switch a channel on */
++#define X1600_PWM_ENC			0x04	/* write 1: switch a channel off */
++#define X1600_PWM_EN			0x08	/* the channels switched on */
++#define X1600_PWM_UPT			0x10	/* write 1: load the waveform word */
++#define X1600_PWM_BUSY			0x14	/* a load is pending */
++#define X1600_PWM_MODE			0x20	/* 0: waveform word, 1: DMA */
++#define X1600_PWM_INL			0x24	/* the level a period starts with */
++#define X1600_PWM_IDL			0x28	/* the level while off */
++#define X1600_PWM_CCFG(n)		(0x40 + 4 * (n))
++#define X1600_PWM_WCFG(n)		(0x80 + 4 * (n))
++
++#define X1600_PWM_CCFG_DIV		GENMASK(2, 0)	/* divide by 2^DIV */
++#define X1600_PWM_WCFG_START		GENMASK(31, 16)	/* counts at the INL level */
++#define X1600_PWM_WCFG_OTHER		GENMASK(15, 0)
++
++#define X1600_PWM_NUM			8
++#define X1600_PWM_MAX_COUNT		0xffff
++#define X1600_PWM_MAX_DIV		7
++
++struct x1600_pwm {
++	void __iomem *base;
++	struct clk *clk;
++	/* Serialises the read-modify-writes of the per-channel bit registers. */
++	struct mutex lock;
++};
++
++static void x1600_pwm_set_bit(struct x1600_pwm *x, unsigned int reg,
++			      unsigned int ch, bool set)
++{
++	u32 val = readl(x->base + reg);
++
++	if (set)
++		val |= BIT(ch);
++	else
++		val &= ~BIT(ch);
++	writel(val, x->base + reg);
++}
++
++static int x1600_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
++			   const struct pwm_state *state)
++{
++	struct x1600_pwm *x = pwmchip_get_drvdata(chip);
++	bool active = state->polarity == PWM_POLARITY_NORMAL;
++	unsigned int ch = pwm->hwpwm, div;
++	u64 rate = clk_get_rate(x->clk);
++	u64 period, duty;
++	u32 busy;
++
++	guard(mutex)(&x->lock);
++
++	if (!state->enabled) {
++		writel(BIT(ch), x->base + X1600_PWM_ENC);
++		x1600_pwm_set_bit(x, X1600_PWM_IDL, ch, !active);
++		return 0;
++	}
++
++	for (div = 0; ; div++) {
++		period = mul_u64_u64_div_u64(state->period, rate >> div, NSEC_PER_SEC);
++		if (period <= X1600_PWM_MAX_COUNT || div == X1600_PWM_MAX_DIV)
++			break;
++	}
++	period = min(period, X1600_PWM_MAX_COUNT);
++	if (period < 2)
++		return -EINVAL;
++
++	duty = mul_u64_u64_div_u64(state->duty_cycle, rate >> div, NSEC_PER_SEC);
++	duty = min(duty, period);
++
++	/* A constant level: the channel off, its output at the idle level. */
++	if (!duty || duty == period) {
++		writel(BIT(ch), x->base + X1600_PWM_ENC);
++		x1600_pwm_set_bit(x, X1600_PWM_IDL, ch, duty ? active : !active);
++		return 0;
++	}
++
++	x1600_pwm_set_bit(x, X1600_PWM_MODE, ch, false);
++	x1600_pwm_set_bit(x, X1600_PWM_INL, ch, active);
++	x1600_pwm_set_bit(x, X1600_PWM_IDL, ch, !active);
++	writel(FIELD_PREP(X1600_PWM_CCFG_DIV, div), x->base + X1600_PWM_CCFG(ch));
++	writel(FIELD_PREP(X1600_PWM_WCFG_START, duty) |
++	       FIELD_PREP(X1600_PWM_WCFG_OTHER, period - duty),
++	       x->base + X1600_PWM_WCFG(ch));
++	writel(BIT(ch), x->base + X1600_PWM_UPT);
++	writel(BIT(ch), x->base + X1600_PWM_ENS);
++
++	/* The load completes at the end of the period, at most 65535 << 7 counts. */
++	return readl_poll_timeout(x->base + X1600_PWM_BUSY, busy, !(busy & BIT(ch)),
++				  10, DIV_ROUND_UP_ULL(2ULL * USEC_PER_SEC *
++						       (X1600_PWM_MAX_COUNT << div), rate));
++}
++
++static int x1600_pwm_get_state(struct pwm_chip *chip, struct pwm_device *pwm,
++			       struct pwm_state *state)
++{
++	struct x1600_pwm *x = pwmchip_get_drvdata(chip);
++	unsigned int ch = pwm->hwpwm;
++	u64 rate = clk_get_rate(x->clk);
++	u32 wcfg, div;
++
++	if (!rate)
++		return -EINVAL;
++
++	state->enabled = readl(x->base + X1600_PWM_EN) & BIT(ch);
++	state->polarity = readl(x->base + X1600_PWM_INL) & BIT(ch) ?
++			  PWM_POLARITY_NORMAL : PWM_POLARITY_INVERSED;
++
++	div = FIELD_GET(X1600_PWM_CCFG_DIV, readl(x->base + X1600_PWM_CCFG(ch)));
++	wcfg = readl(x->base + X1600_PWM_WCFG(ch));
++	state->duty_cycle = DIV64_U64_ROUND_UP((u64)FIELD_GET(X1600_PWM_WCFG_START, wcfg)
++					       * NSEC_PER_SEC << div, rate);
++	state->period = DIV64_U64_ROUND_UP(((u64)FIELD_GET(X1600_PWM_WCFG_START, wcfg) +
++					    FIELD_GET(X1600_PWM_WCFG_OTHER, wcfg))
++					   * NSEC_PER_SEC << div, rate);
++	return 0;
++}
++
++static const struct pwm_ops x1600_pwm_ops = {
++	.apply = x1600_pwm_apply,
++	.get_state = x1600_pwm_get_state,
++};
++
++static int x1600_pwm_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct pwm_chip *chip;
++	struct x1600_pwm *x;
++	int ret;
++
++	chip = devm_pwmchip_alloc(dev, X1600_PWM_NUM, sizeof(*x));
++	if (IS_ERR(chip))
++		return PTR_ERR(chip);
++	x = pwmchip_get_drvdata(chip);
++
++	x->base = devm_platform_ioremap_resource(pdev, 0);
++	if (IS_ERR(x->base))
++		return PTR_ERR(x->base);
++
++	x->clk = devm_clk_get_enabled(dev, NULL);
++	if (IS_ERR(x->clk))
++		return dev_err_probe(dev, PTR_ERR(x->clk), "Unable to get clock\n");
++
++	ret = devm_mutex_init(dev, &x->lock);
++	if (ret)
++		return ret;
++
++	chip->ops = &x1600_pwm_ops;
++	return devm_pwmchip_add(dev, chip);
++}
++
++static const struct of_device_id x1600_pwm_of_match[] = {
++	{ .compatible = "ingenic,x1600-pwm" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, x1600_pwm_of_match);
++
++static struct platform_driver x1600_pwm_driver = {
++	.driver = {
++		.name = "ingenic-x1600-pwm",
++		.of_match_table = x1600_pwm_of_match,
++	},
++	.probe = x1600_pwm_probe,
++};
++module_platform_driver(x1600_pwm_driver);
++
++MODULE_DESCRIPTION("Ingenic X1600 PWM driver");
++MODULE_LICENSE("GPL");
+-- 
+2.39.5
+

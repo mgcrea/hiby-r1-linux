@@ -1,7 +1,7 @@
 From 0de3b5292274e85bd21f21aec0597455717d0515 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Thu, 22 Oct 2026 22:15:09 +0000
-Subject: [PATCH 02/24] MIPS: ingenic: add a minimal X1600 and HiBy R1 device
+Subject: [PATCH 02/33] MIPS: ingenic: add a minimal X1600 and HiBy R1 device
  tree
 
 Enough to boot to a console on the framebuffer the stock kernel left

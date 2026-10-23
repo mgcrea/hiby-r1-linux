@@ -1,7 +1,7 @@
 From 383dea725d929863a54c31db0b69bae31e9663b8 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:59:44 +0000
-Subject: [PATCH 18/24] mfd: axp20x: add the AXP2101
+Subject: [PATCH 18/33] mfd: axp20x: add the AXP2101
 
 The AXP2101 is an X-Powers PMIC with five DC-DC converters, eleven LDOs,
 a charger and a fuel gauge, used on the HiBy R1 among others. Add it to

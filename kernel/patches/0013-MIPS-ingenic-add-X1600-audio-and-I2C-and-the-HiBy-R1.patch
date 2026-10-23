@@ -1,7 +1,7 @@
 From 57cadfb59e67994d06323d8ff66f7d4f929b49f7 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:02:43 +0000
-Subject: [PATCH 13/24] MIPS: ingenic: add X1600 audio and I2C, and the HiBy
+Subject: [PATCH 13/33] MIPS: ingenic: add X1600 audio and I2C, and the HiBy
  R1's DAC and touch panel
 
 X1600: the DMA controller, the two I2C controllers and the AIC in I2S

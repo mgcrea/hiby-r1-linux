@@ -1,0 +1,26 @@
+From 5f160a9003068a96b8a2a7813a13689b639114a2 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 09:05:52 +0000
+Subject: [PATCH 27/33] dt-bindings: vendor-prefixes: add HiBy
+
+HiBy makes digital audio players, among them the R1.
+---
+ Documentation/devicetree/bindings/vendor-prefixes.yaml | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/vendor-prefixes.yaml b/Documentation/devicetree/bindings/vendor-prefixes.yaml
+index ba20029..b5bb11c 100644
+--- a/Documentation/devicetree/bindings/vendor-prefixes.yaml
++++ b/Documentation/devicetree/bindings/vendor-prefixes.yaml
+@@ -722,6 +722,8 @@ patternProperties:
+     description: HEAD acoustics
+   "^hechuang,.*":
+     description: Shenzhen Hechuang Intelligent Co.
++  "^hiby,.*":
++    description: Guangzhou HiBy Technology Co., Ltd.
+   "^hideep,.*":
+     description: HiDeep Inc.
+   "^himax,.*":
+-- 
+2.39.5
+

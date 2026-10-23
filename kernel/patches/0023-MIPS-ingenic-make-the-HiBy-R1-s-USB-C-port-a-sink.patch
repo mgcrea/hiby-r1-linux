@@ -1,7 +1,7 @@
 From d4b5cdbeed8441ded2249afe98c4a77f7acb540c Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 08:43:25 +0000
-Subject: [PATCH 23/24] MIPS: ingenic: make the HiBy R1's USB-C port a sink
+Subject: [PATCH 23/33] MIPS: ingenic: make the HiBy R1's USB-C port a sink
 
 The R1's TCS1421 USB Type-C port controller takes its role from two
 pins, CFG0 on PA9 and CFG1 on PB24. The stock firmware drives both high,

@@ -1,7 +1,7 @@
 From 7a90927f5c4dfda209e474c21cc1f21d77fe61d4 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:27:24 +0000
-Subject: [PATCH 11/24] i2c: jz4780: add the X1600
+Subject: [PATCH 11/33] i2c: jz4780: add the X1600
 
 The X1600's I2C controller is the X1000's, except that its SDA set-up
 time register is at 0xa0: at 0x94, where the driver writes it, the X1600

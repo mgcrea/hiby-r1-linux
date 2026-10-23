@@ -1,7 +1,7 @@
 From 69199ac9733e41d24bc3ec9a9aed25f7b6636b3f Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 06:35:45 +0000
-Subject: [PATCH 07/24] MIPS: ingenic: use the X1600 CGU and pin controller
+Subject: [PATCH 07/33] MIPS: ingenic: use the X1600 CGU and pin controller
 
 Replace the fixed stand-in clocks with the CGU, describe the pin
 controller and its four GPIO ports, and mux the R1's SD card pins. The
