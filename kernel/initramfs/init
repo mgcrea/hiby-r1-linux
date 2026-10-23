@@ -1,0 +1,14 @@
+#!/bin/busybox sh
+/bin/busybox --install -s
+mount -t proc proc /proc
+mount -t sysfs sys /sys
+echo
+echo "HiBy R1: Linux $(uname -r) is up"
+grep -E "system type|cpu model|BogoMIPS" /proc/cpuinfo
+free
+# A clock that ticks on screen shows the timer and interrupts work. It
+# rewrites one line so the boot log above stays readable.
+while :; do
+	printf "\ruptime %s s " "$(cut -d' ' -f1 /proc/uptime)"
+	sleep 1
+done
