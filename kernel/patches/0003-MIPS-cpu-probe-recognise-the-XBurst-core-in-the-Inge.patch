@@ -1,0 +1,51 @@
+From 0cfc73b82f8b31a16ceb99cf7f98ee9ca1f4ff09 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 05:30:36 +0000
+Subject: [PATCH 3/4] MIPS: cpu-probe: recognise the XBurst core in the Ingenic
+ X1600
+
+The X1600 reports PRId 0x00d00000: company Ingenic D0, implementation 0,
+which cpu_probe_ingenic() rejects with "Unknown Ingenic Processor ID!"
+before any console exists. It is an XBurst1 core like the X1830's, which
+shares the D0 company ID, so handle it the same way.
+---
+ arch/mips/include/asm/cpu.h  | 3 ++-
+ arch/mips/kernel/cpu-probe.c | 1 +
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/arch/mips/include/asm/cpu.h b/arch/mips/include/asm/cpu.h
+index 0fd9f9b..57cae26 100644
+--- a/arch/mips/include/asm/cpu.h
++++ b/arch/mips/include/asm/cpu.h
+@@ -47,7 +47,7 @@
+ #define PRID_COMP_CAVIUM	0x0d0000
+ #define PRID_COMP_LOONGSON	0x140000
+ #define PRID_COMP_INGENIC_13	0x130000	/* X2000, X2100 */
+-#define PRID_COMP_INGENIC_D0	0xd00000	/* JZ4730, JZ4740, JZ4750, JZ4755, JZ4760, X1830 */
++#define PRID_COMP_INGENIC_D0	0xd00000	/* JZ4730, JZ4740, JZ4750, JZ4755, JZ4760, X1600, X1830 */
+ #define PRID_COMP_INGENIC_D1	0xd10000	/* JZ4770, JZ4775, X1000 */
+ #define PRID_COMP_INGENIC_E1	0xe10000	/* JZ4780 */
+ 
+@@ -186,6 +186,7 @@
+  * These are the PRID's for when 23:16 == PRID_COMP_INGENIC_*
+  */
+ 
++#define PRID_IMP_XBURST_X1600	0x0000	/* XBurst®1 in the X1600 (PRId 0x00d00000)	*/
+ #define PRID_IMP_XBURST_REV1	0x0200	/* XBurst®1 with MXU1.0/MXU1.1 SIMD ISA	*/
+ #define PRID_IMP_XBURST_REV2	0x0100	/* XBurst®1 with MXU2.0 SIMD ISA		*/
+ #define PRID_IMP_XBURST2		0x2000	/* XBurst®2 with MXU2.1 SIMD ISA		*/
+diff --git a/arch/mips/kernel/cpu-probe.c b/arch/mips/kernel/cpu-probe.c
+index 489612e..e3b5473 100644
+--- a/arch/mips/kernel/cpu-probe.c
++++ b/arch/mips/kernel/cpu-probe.c
+@@ -1769,6 +1769,7 @@ static inline void cpu_probe_ingenic(struct cpuinfo_mips *c, unsigned int cpu)
+ 	switch (c->processor_id & PRID_IMP_MASK) {
+ 
+ 	/* XBurst®1 with MXU1.0/MXU1.1 SIMD ISA */
++	case PRID_IMP_XBURST_X1600:
+ 	case PRID_IMP_XBURST_REV1:
+ 
+ 		/*
+-- 
+2.39.5
+

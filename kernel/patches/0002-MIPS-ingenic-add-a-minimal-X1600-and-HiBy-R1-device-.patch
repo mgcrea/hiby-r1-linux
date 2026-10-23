@@ -1,0 +1,155 @@
+From 11344ae5d2dfb6c8368e50a200a179e3a1f57ae7 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Thu, 22 Oct 2026 22:15:09 +0000
+Subject: [PATCH 2/4] MIPS: ingenic: add a minimal X1600 and HiBy R1 device
+ tree
+
+Enough to boot to a console on the framebuffer the stock kernel left
+running: interrupt controllers, the OST timer, a fixed 24 MHz clock and
+simple-framebuffer, with the display's descriptor and pages reserved.
+---
+ arch/mips/boot/dts/ingenic/Makefile    |  1 +
+ arch/mips/boot/dts/ingenic/hiby-r1.dts | 48 +++++++++++++++++++
+ arch/mips/boot/dts/ingenic/x1600.dtsi  | 64 ++++++++++++++++++++++++++
+ 3 files changed, 113 insertions(+)
+ create mode 100644 arch/mips/boot/dts/ingenic/hiby-r1.dts
+ create mode 100644 arch/mips/boot/dts/ingenic/x1600.dtsi
+
+diff --git a/arch/mips/boot/dts/ingenic/Makefile b/arch/mips/boot/dts/ingenic/Makefile
+index 6e674f1..d52b147 100644
+--- a/arch/mips/boot/dts/ingenic/Makefile
++++ b/arch/mips/boot/dts/ingenic/Makefile
+@@ -3,5 +3,6 @@ dtb-$(CONFIG_JZ4740_QI_LB60)	+= qi_lb60.dtb
+ dtb-$(CONFIG_JZ4740_RS90)	+= rs90.dtb
+ dtb-$(CONFIG_JZ4770_GCW0)	+= gcw0.dtb
+ dtb-$(CONFIG_JZ4780_CI20)	+= ci20.dtb
++dtb-$(CONFIG_X1600_HIBY_R1)	+= hiby-r1.dtb
+ dtb-$(CONFIG_X1000_CU1000_NEO)	+= cu1000-neo.dtb
+ dtb-$(CONFIG_X1830_CU1830_NEO)	+= cu1830-neo.dtb
+diff --git a/arch/mips/boot/dts/ingenic/hiby-r1.dts b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+new file mode 100644
+index 0000000..20e1324
+--- /dev/null
++++ b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+@@ -0,0 +1,48 @@
++// SPDX-License-Identifier: GPL-2.0
++/dts-v1/;
++
++#include "x1600.dtsi"
++
++/ {
++	compatible = "hiby,r1", "ingenic,x1600";
++	model = "HiBy R1";
++
++	chosen {
++		bootargs = "console=tty0 loglevel=8";
++	};
++
++	memory@0 {
++		device_type = "memory";
++		reg = <0x0 0x4000000>;
++	};
++
++	reserved-memory {
++		#address-cells = <1>;
++		#size-cells = <1>;
++		ranges;
++
++		/*
++		 * The display controller keeps scanning out what the stock
++		 * kernel set up: a self-linked frame descriptor and two
++		 * 480x800 RGB565 pages.
++		 */
++		lcd_descriptor: lcd-descriptor@2518000 {
++			reg = <0x02518000 0x1000>;
++			no-map;
++		};
++
++		lcd_pages: framebuffer@2600000 {
++			reg = <0x02600000 0x177000>;
++			no-map;
++		};
++	};
++
++	framebuffer@2600000 {
++		compatible = "simple-framebuffer";
++		reg = <0x02600000 0xbb800>;
++		width = <480>;
++		height = <800>;
++		stride = <960>;
++		format = "r5g6b5";
++	};
++};
+diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
+new file mode 100644
+index 0000000..ebd9273
+--- /dev/null
++++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
+@@ -0,0 +1,64 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Ingenic X1600. Only what boots to a console with the clocks, display and
++ * DRAM left as the bootloader and the stock kernel configured them: there is
++ * no X1600 clock driver yet, so everything clocked comes from fixed clocks.
++ * Addresses and interrupts match the vendor 4.4 kernel's device tree.
++ */
++
++/ {
++	#address-cells = <1>;
++	#size-cells = <1>;
++	compatible = "ingenic,x1600";
++
++	cpus {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		cpu0: cpu@0 {
++			device_type = "cpu";
++			compatible = "ingenic,xburst-fpu1.0-mxu1.1";
++			reg = <0>;
++		};
++	};
++
++	cpuintc: interrupt-controller {
++		#address-cells = <0>;
++		#interrupt-cells = <1>;
++		interrupt-controller;
++		compatible = "mti,cpu-interrupt-controller";
++	};
++
++	intc: interrupt-controller@10001000 {
++		compatible = "ingenic,x1600-intc", "ingenic,x1000-intc", "ingenic,jz4780-intc";
++		reg = <0x10001000 0x50>;
++
++		interrupt-controller;
++		#interrupt-cells = <1>;
++
++		interrupt-parent = <&cpuintc>;
++		interrupts = <2>;
++	};
++
++	/* The OST and TCU drivers look the external clock up as "ext". */
++	exclk: ext {
++		compatible = "fixed-clock";
++		#clock-cells = <0>;
++		clock-frequency = <24000000>;
++	};
++
++	ost: timer@12000000 {
++		compatible = "ingenic,x1600-ost", "ingenic,x1000-ost";
++		reg = <0x12000000 0x3c>;
++
++		#clock-cells = <1>;
++
++		/* Stands in for the CGU's OST gate, which the SPL left on. */
++		clocks = <&exclk>;
++		clock-names = "ost";
++
++		/* CPU interrupt 4 on the X1600, 3 on the X1000. */
++		interrupt-parent = <&cpuintc>;
++		interrupts = <4>;
++	};
++};
+-- 
+2.39.5
+

@@ -1,0 +1,267 @@
+From f342a6ac1e0f1390cf2ca28682ad1c0494b99523 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Thu, 22 Oct 2026 22:15:10 +0000
+Subject: [PATCH 4/4] DEBUG: paint boot progress stripes on the HiBy R1 screen
+
+Not for upstream: with no serial console, a stripe per milestone shows
+how far a boot got. kernel_entry paints black (row 352) before anything
+else and grey (row 376) after clearing BSS; start_kernel paints one
+stripe per step from row 400 (n = 0..8) and setup_arch one per step
+(n = 10..16), on both framebuffer pages.
+---
+ arch/mips/include/asm/mach-ingenic/r1-mark.h | 36 ++++++++++++++++++++
+ arch/mips/ingenic/Kconfig                    |  7 ++++
+ arch/mips/kernel/head.S                      | 26 ++++++++++++++
+ arch/mips/kernel/setup.c                     | 12 +++++++
+ init/main.c                                  | 15 ++++++++
+ 5 files changed, 96 insertions(+)
+ create mode 100644 arch/mips/include/asm/mach-ingenic/r1-mark.h
+
+diff --git a/arch/mips/include/asm/mach-ingenic/r1-mark.h b/arch/mips/include/asm/mach-ingenic/r1-mark.h
+new file mode 100644
+index 0000000..527fe51
+--- /dev/null
++++ b/arch/mips/include/asm/mach-ingenic/r1-mark.h
+@@ -0,0 +1,36 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * Boot progress for the HiBy R1 without a serial console: paint stripe @n
++ * straight into the framebuffer the display controller is scanning out
++ * (two 480x800 RGB565 pages at 0x02600000; both are painted, whichever one
++ * is on screen), through KSEG1 so no cache or
++ * mapping is needed. Stripes start at row 400 so the console, drawn from the
++ * top, doesn't cover them early on.
++ */
++#ifndef __ASM_MACH_INGENIC_R1_MARK_H
++#define __ASM_MACH_INGENIC_R1_MARK_H
++
++#ifdef CONFIG_HIBY_R1_BOOT_MARKS
++#include <linux/array_size.h>
++#include <asm/addrspace.h>
++
++static inline void r1_mark(unsigned int n)
++{
++	static const unsigned short colours[] = {
++		0xf800, 0x07e0, 0x001f, 0xffe0, 0xf81f, 0x07ff, 0x0000, 0xfc00,
++	};
++	volatile unsigned short *p = (volatile unsigned short *)
++		CKSEG1ADDR(0x02600000 + (400 + n * 24) * 960);
++	unsigned short c = colours[n % ARRAY_SIZE(colours)];
++	unsigned int i;
++
++	for (i = 0; i < 480 * 16; i++) {
++		p[i] = c;
++		p[i + 480 * 800] = c;
++	}
++}
++#else
++static inline void r1_mark(unsigned int n) { }
++#endif
++
++#endif
+diff --git a/arch/mips/ingenic/Kconfig b/arch/mips/ingenic/Kconfig
+index a58b9f3..caab93f 100644
+--- a/arch/mips/ingenic/Kconfig
++++ b/arch/mips/ingenic/Kconfig
+@@ -76,6 +76,13 @@ config MACH_X1000
+ 	select SYS_HAS_CPU_MIPS32_R2
+ 	select SYS_SUPPORTS_HIGHMEM
+ 
++config HIBY_R1_BOOT_MARKS
++	bool "Paint boot progress stripes on the HiBy R1 screen"
++	depends on X1600_HIBY_R1
++	help
++	  Debug aid with no serial console: start_kernel paints a coloured
++	  stripe into the framebuffer at each milestone.
++
+ config MACH_X1600
+ 	bool
+ 	select MIPS_CPU_SCACHE
+diff --git a/arch/mips/kernel/head.S b/arch/mips/kernel/head.S
+index d99ed58..0a14825 100644
+--- a/arch/mips/kernel/head.S
++++ b/arch/mips/kernel/head.S
+@@ -83,8 +83,32 @@ FEXPORT(__kernel_entry)
+ 
+ 	__REF
+ 
++#ifdef CONFIG_HIBY_R1_BOOT_MARKS
++	/* See asm/mach-ingenic/r1-mark.h: a 16-row stripe on both pages. */
++	.macro	r1_asm_mark row, colour
++	.set	push
++	.set	reorder
++	li	t0, 0xa2600000 + \row * 960
++	li	t1, 0xa2600000 + 768000 + \row * 960
++	li	t2, 480 * 16
++	li	t3, \colour
++9:	sh	t3, 0(t0)
++	sh	t3, 0(t1)
++	addiu	t0, 2
++	addiu	t1, 2
++	addiu	t2, -1
++	bnez	t2, 9b
++	.set	pop
++	.endm
++#else
++	.macro	r1_asm_mark row, colour
++	.endm
++#endif
++
+ NESTED(kernel_entry, 16, sp)			# kernel entry point
+ 
++	r1_asm_mark 352, 0x0000
++
+ 	kernel_entry_setup			# cpu specific setup
+ 
+ 	setup_c0_status_pri
+@@ -103,6 +127,8 @@ NESTED(kernel_entry, 16, sp)			# kernel entry point
+ 	LONG_S		zero, (t0)
+ 	bne		t0, t1, 1b
+ 
++	r1_asm_mark 376, 0x8410
++
+ 	LONG_S		a0, fw_arg0		# firmware arguments
+ 	LONG_S		a1, fw_arg1
+ 	LONG_S		a2, fw_arg2
+diff --git a/arch/mips/kernel/setup.c b/arch/mips/kernel/setup.c
+index 1ae6d0c..0b07268 100644
+--- a/arch/mips/kernel/setup.c
++++ b/arch/mips/kernel/setup.c
+@@ -11,6 +11,11 @@
+  * Copyright (C) 2000, 2001, 2002, 2007	 Maciej W. Rozycki
+  */
+ #include <linux/init.h>
++#ifdef CONFIG_HIBY_R1_BOOT_MARKS
++#include <r1-mark.h>
++#else
++static inline void r1_mark(unsigned int n) { }
++#endif
+ #include <linux/cpu.h>
+ #include <linux/delay.h>
+ #include <linux/hex.h>
+@@ -764,26 +769,33 @@ static void __init setup_rng_seed(void)
+ void __init setup_arch(char **cmdline_p)
+ {
+ 	cpu_probe();
++	r1_mark(10);
+ 	mips_cm_probe();
+ 	prom_init();
++	r1_mark(11);
+ 
+ 	setup_early_fdc_console();
+ #ifdef CONFIG_EARLY_PRINTK
+ 	setup_early_printk();
+ #endif
+ 	cpu_report();
++	r1_mark(12);
+ 	if (IS_ENABLED(CONFIG_CPU_R4X00_BUGS64))
+ 		check_bugs64_early();
+ 
+ 	arch_mem_init(cmdline_p);
++	r1_mark(13);
+ 	dmi_setup();
+ 
+ 	resource_init();
+ 	plat_smp_setup();
+ 	prefill_possible_map();
++	r1_mark(14);
+ 
+ 	cpu_cache_init();
++	r1_mark(15);
+ 	pagetable_init();
++	r1_mark(16);
+ 
+ 	memblock_dump_all();
+ 
+diff --git a/init/main.c b/init/main.c
+index 31f2bf5..0d27b73 100644
+--- a/init/main.c
++++ b/init/main.c
+@@ -26,6 +26,11 @@
+ #include <linux/delay.h>
+ #include <linux/ioport.h>
+ #include <linux/init.h>
++#ifdef CONFIG_HIBY_R1_BOOT_MARKS
++#include <r1-mark.h>
++#else
++static inline void r1_mark(unsigned int n) { }
++#endif
+ #include <linux/initrd.h>
+ #include <linux/memblock.h>
+ #include <linux/acpi.h>
+@@ -989,6 +994,8 @@ void start_kernel(void)
+ 	char *command_line;
+ 	char *after_dashes;
+ 
++	r1_mark(0);
++
+ 	set_task_stack_end_magic(&init_task);
+ 	smp_setup_processor_id();
+ 	debug_objects_early_init();
+@@ -1007,6 +1014,7 @@ void start_kernel(void)
+ 	page_address_init();
+ 	pr_notice("%s", linux_banner);
+ 	setup_arch(&command_line);
++	r1_mark(1);
+ 	mm_core_init_early();
+ 	/* Static keys and static calls are needed by LSMs */
+ 	jump_label_init();
+@@ -1047,6 +1055,7 @@ void start_kernel(void)
+ 	sort_main_extable();
+ 	trap_init();
+ 	mm_core_init();
++	r1_mark(2);
+ 	maple_tree_init();
+ 	poking_init();
+ 	ftrace_init();
+@@ -1092,6 +1101,7 @@ void start_kernel(void)
+ 	/* init some links before init_ISA_irqs() */
+ 	early_irq_init();
+ 	init_IRQ();
++	r1_mark(3);
+ 	tick_init();
+ 	rcu_init_nohz();
+ 	timers_init();
+@@ -1101,6 +1111,7 @@ void start_kernel(void)
+ 	vdso_setup_data_pages();
+ 	timekeeping_init();
+ 	time_init();
++	r1_mark(4);
+ 
+ 	/* This must be after timekeeping is initialized */
+ 	random_init();
+@@ -1116,6 +1127,7 @@ void start_kernel(void)
+ 
+ 	early_boot_irqs_disabled = false;
+ 	local_irq_enable();
++	r1_mark(5);
+ 
+ 	kmem_cache_init_late();
+ 
+@@ -1125,6 +1137,7 @@ void start_kernel(void)
+ 	 * this. But we do want output early, in case something goes wrong.
+ 	 */
+ 	console_init();
++	r1_mark(6);
+ 	if (panic_later)
+ 		panic("Too many boot %s vars at `%s'", panic_later,
+ 		      panic_param);
+@@ -1187,6 +1200,7 @@ void start_kernel(void)
+ 	kcsan_init();
+ 
+ 	/* Do the rest non-__init'ed, we're now alive */
++	r1_mark(7);
+ 	rest_init();
+ 
+ 	/*
+@@ -1563,6 +1577,7 @@ static int __ref kernel_init(void *unused)
+ 	wait_for_completion(&kthreadd_done);
+ 
+ 	kernel_init_freeable();
++	r1_mark(8);
+ 	/* need to finish all async __init code before freeing the memory */
+ 	async_synchronize_full();
+ 
+-- 
+2.39.5
+

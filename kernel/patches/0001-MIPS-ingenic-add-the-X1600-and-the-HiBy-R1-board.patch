@@ -1,0 +1,85 @@
+From b55c1d9bf6f45a3323f133a3128a8ed99c34dab0 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Thu, 22 Oct 2026 22:15:09 +0000
+Subject: [PATCH 1/4] MIPS: ingenic: add the X1600 and the HiBy R1 board
+
+The X1600 is an XBurst1 SoC close to the X1000 (same PRId company and
+core, 128 KiB L2 as reported by Config2). The HiBy R1 is a portable
+music player built on it.
+---
+ arch/mips/generic/board-ingenic.c |  3 +++
+ arch/mips/include/asm/bootinfo.h  |  1 +
+ arch/mips/ingenic/Kconfig         | 10 ++++++++++
+ 3 files changed, 14 insertions(+)
+
+diff --git a/arch/mips/generic/board-ingenic.c b/arch/mips/generic/board-ingenic.c
+index 1f49068..d6b0e25 100644
+--- a/arch/mips/generic/board-ingenic.c
++++ b/arch/mips/generic/board-ingenic.c
+@@ -34,6 +34,8 @@ static __init char *ingenic_get_system_type(unsigned long machtype)
+ 		return "X2000";
+ 	case MACH_INGENIC_X1830:
+ 		return "X1830";
++	case MACH_INGENIC_X1600:
++		return "X1600";
+ 	case MACH_INGENIC_X1000E:
+ 		return "X1000E";
+ 	case MACH_INGENIC_X1000:
+@@ -146,6 +148,7 @@ static const struct of_device_id ingenic_of_match[] __initconst = {
+ 	{ .compatible = "ingenic,jz4780", .data = (void *)MACH_INGENIC_JZ4780 },
+ 	{ .compatible = "ingenic,x1000", .data = (void *)MACH_INGENIC_X1000 },
+ 	{ .compatible = "ingenic,x1000e", .data = (void *)MACH_INGENIC_X1000E },
++	{ .compatible = "ingenic,x1600", .data = (void *)MACH_INGENIC_X1600 },
+ 	{ .compatible = "ingenic,x1830", .data = (void *)MACH_INGENIC_X1830 },
+ 	{ .compatible = "ingenic,x2000", .data = (void *)MACH_INGENIC_X2000 },
+ 	{ .compatible = "ingenic,x2000e", .data = (void *)MACH_INGENIC_X2000E },
+diff --git a/arch/mips/include/asm/bootinfo.h b/arch/mips/include/asm/bootinfo.h
+index 2128ba9..2e562aa 100644
+--- a/arch/mips/include/asm/bootinfo.h
++++ b/arch/mips/include/asm/bootinfo.h
+@@ -81,6 +81,7 @@ enum ingenic_machine_type {
+ 	MACH_INGENIC_JZ4780,
+ 	MACH_INGENIC_X1000,
+ 	MACH_INGENIC_X1000E,
++	MACH_INGENIC_X1600,
+ 	MACH_INGENIC_X1830,
+ 	MACH_INGENIC_X2000,
+ 	MACH_INGENIC_X2000E,
+diff --git a/arch/mips/ingenic/Kconfig b/arch/mips/ingenic/Kconfig
+index f595b33..a58b9f3 100644
+--- a/arch/mips/ingenic/Kconfig
++++ b/arch/mips/ingenic/Kconfig
+@@ -8,6 +8,7 @@ config MACH_INGENIC_GENERIC
+ 	select MACH_JZ4770
+ 	select MACH_JZ4780
+ 	select MACH_X1000
++	select MACH_X1600
+ 	select MACH_X1830
+ 
+ choice
+@@ -39,6 +40,10 @@ config X1000_CU1000_NEO
+ 	bool "YSH & ATIL CU1000 Module with Neo backplane"
+ 	select MACH_X1000
+ 
++config X1600_HIBY_R1
++	bool "HiBy R1"
++	select MACH_X1600
++
+ config X1830_CU1830_NEO
+ 	bool "YSH & ATIL CU1830 Module with Neo backplane"
+ 	select MACH_X1830
+@@ -71,6 +76,11 @@ config MACH_X1000
+ 	select SYS_HAS_CPU_MIPS32_R2
+ 	select SYS_SUPPORTS_HIGHMEM
+ 
++config MACH_X1600
++	bool
++	select MIPS_CPU_SCACHE
++	select SYS_HAS_CPU_MIPS32_R2
++
+ config MACH_X1830
+ 	bool
+ 	select MIPS_CPU_SCACHE
+-- 
+2.39.5
+
