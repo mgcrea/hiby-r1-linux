@@ -66,8 +66,12 @@ docker run --rm -v r1-linux:/src -v "$here:/r1" r1-mainline sh -euc '
   # Test tools for the initramfs, built against tinyalsa (see Dockerfile).
   ta=/opt/tinyalsa
   mipsel-linux-gnu-gcc -static -Os -Wall -I$ta/include -o $O/r1tone /r1/initramfs/r1tone.c $ta/libtinyalsa.a -lm
-  mk -j$(nproc) vmlinux.bin dtbs 2>&1 | grep -v -E "^\s*$" || true
-  test -f $O/arch/mips/boot/vmlinux.bin
+  # Through a log file: a pipe would hide make failing, and the last
+  # image would be reported as new.
+  status=0
+  mk -j$(nproc) vmlinux.bin dtbs > $O/make.log 2>&1 || status=$?
+  grep -v -E "^\s*$" $O/make.log || true
+  [ $status = 0 ] || { echo "make failed"; exit 1; }
   cat $O/arch/mips/boot/vmlinux.bin $O/arch/mips/boot/dts/ingenic/hiby-r1.dtb > /r1/out/r1-linux.bin
   cp $O/System.map /r1/out/System.map
   # The appended DTB must land exactly on __appended_dtb.
