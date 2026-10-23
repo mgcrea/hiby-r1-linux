@@ -1,4 +1,4 @@
-From 983f1950cce661d9a18e06ee80fe70dcbafdc050 Mon Sep 17 00:00:00 2001
+From cb1de3d1d118edf067a7c7f21f8878ab942650f3 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:10:36 +0000
 Subject: [PATCH 31/40] pwm: add a driver for the Ingenic X1600 PWM controller

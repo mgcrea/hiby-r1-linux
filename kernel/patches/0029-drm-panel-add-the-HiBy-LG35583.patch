@@ -1,4 +1,4 @@
-From c61d8bafe49eeeb31eafb05a3ab0032df28692b9 Mon Sep 17 00:00:00 2001
+From 1949fa8c60300bf75b0f6280dcc66b503d4211b5 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:05:52 +0000
 Subject: [PATCH 29/40] drm/panel: add the HiBy LG35583

@@ -1,4 +1,4 @@
-From 41f85d9985fa1dd136ab0c693dd1b9ed25775da3 Mon Sep 17 00:00:00 2001
+From fc9f2fa76c00e24dc6ad5cd19d8df303ba108e8b Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 05:30:36 +0000
 Subject: [PATCH 03/40] MIPS: cpu-probe: recognise the XBurst core in the

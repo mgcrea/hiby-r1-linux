@@ -1,4 +1,4 @@
-From 6216b58c24f0cf20e930515c24d78c91ecb359c4 Mon Sep 17 00:00:00 2001
+From 77905559fa92ad7cdb86915f222251a53cfde8c6 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:09:57 +0000
 Subject: [PATCH 30/40] dt-bindings: pwm: add the Ingenic X1600 PWM controller

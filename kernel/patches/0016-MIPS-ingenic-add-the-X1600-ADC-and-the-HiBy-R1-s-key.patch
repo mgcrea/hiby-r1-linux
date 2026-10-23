@@ -1,4 +1,4 @@
-From d5b8182443ddf677e937c8419d310c344caa4003 Mon Sep 17 00:00:00 2001
+From f6f6e4a936e1c48e8b1fbe94f5c60d9d59e0db8a Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:39:55 +0000
 Subject: [PATCH 16/40] MIPS: ingenic: add the X1600 ADC and the HiBy R1's keys

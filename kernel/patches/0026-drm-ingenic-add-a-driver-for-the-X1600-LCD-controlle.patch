@@ -1,4 +1,4 @@
-From 406656f5d92c50a88b0642a8d855525ec2cb649c Mon Sep 17 00:00:00 2001
+From 55ace56ee4ab1b245c57f540c846726d869b6b3d Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:00:55 +0000
 Subject: [PATCH 26/40] drm/ingenic: add a driver for the X1600 LCD controller
@@ -17,8 +17,8 @@ the GPL for HiBy's players.
  drivers/gpu/drm/Makefile                    |   1 +
  drivers/gpu/drm/ingenic/Kconfig             |  20 +
  drivers/gpu/drm/ingenic/Makefile            |   1 +
- drivers/gpu/drm/ingenic/ingenic-x1600-drm.c | 616 ++++++++++++++++++++
- 4 files changed, 638 insertions(+)
+ drivers/gpu/drm/ingenic/ingenic-x1600-drm.c | 624 ++++++++++++++++++++
+ 4 files changed, 646 insertions(+)
  create mode 100644 drivers/gpu/drm/ingenic/ingenic-x1600-drm.c
 
 diff --git a/drivers/gpu/drm/Makefile b/drivers/gpu/drm/Makefile
@@ -75,10 +75,10 @@ index f10cc1c..90072ad 100644
 +obj-$(CONFIG_DRM_INGENIC_X1600) += ingenic-x1600-drm.o
 diff --git a/drivers/gpu/drm/ingenic/ingenic-x1600-drm.c b/drivers/gpu/drm/ingenic/ingenic-x1600-drm.c
 new file mode 100644
-index 0000000..b17c5dd
+index 0000000..0c63b2e
 --- /dev/null
 +++ b/drivers/gpu/drm/ingenic/ingenic-x1600-drm.c
-@@ -0,0 +1,616 @@
+@@ -0,0 +1,624 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * DRM driver for the LCD controller of the Ingenic X1600
@@ -127,6 +127,7 @@ index 0000000..b17c5dd
 +#define X1600_LCD_FRM_DESC		0x1000
 +#define X1600_LCD_FRM_START		0x1004
 +#define X1600_LCD_CTRL			0x2000
++#define X1600_LCD_STATE			0x2004	/* undocumented */
 +#define X1600_LCD_CLR_ST		0x2008
 +#define X1600_LCD_INT_EN		0x200c
 +#define X1600_LCD_ST			0x2010
@@ -140,6 +141,12 @@ index 0000000..b17c5dd
 +
 +/* CTRL: stop at the end of the frame. */
 +#define X1600_LCD_CTRL_GEN_STOP		BIT(4)
++
++/*
++ * STATE: 0x0f running, 0x06 or 0x20006 stopped. Bit 8 is set when an underrun
++ * halted the controller: it then ignores stops and starts until a reset.
++ */
++#define X1600_LCD_STATE_STUCK		BIT(8)
 +
 +/*
 + * ST, CLR_ST (write 1 to clear) and INT_EN. A status bit is only set while
@@ -650,7 +657,8 @@ index 0000000..b17c5dd
 +	}
 +
 +	/* Nothing reports the stop if the controller was not running. */
-+	x1600_lcd_stop(lcd);
++	if (!x1600_lcd_stop(lcd) && readl(lcd->base + X1600_LCD_STATE) & X1600_LCD_STATE_STUCK)
++		dev_err(dev, "The controller is halted after an underrun\n");
 +	clk_disable_unprepare(lcd->clk);
 +
 +	ret = drm_dev_register(drm, 0);

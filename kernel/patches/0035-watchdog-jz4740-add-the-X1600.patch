@@ -1,4 +1,4 @@
-From 43520e5423703f912c2c5f22e8d554bf9267d0e5 Mon Sep 17 00:00:00 2001
+From b293746386a00a16dc3e76b6578202d461ee2579 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 12:24:01 +0000
 Subject: [PATCH 35/40] watchdog: jz4740: add the X1600

@@ -1,4 +1,4 @@
-From 043aadd50f4b68b1aa586bd4bc8ab6d82667c3bb Mon Sep 17 00:00:00 2001
+From 50711971684e5125c7a3a918c3f93b0493a0cf39 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:02:43 +0000
 Subject: [PATCH 13/40] MIPS: ingenic: add X1600 audio and I2C, and the HiBy

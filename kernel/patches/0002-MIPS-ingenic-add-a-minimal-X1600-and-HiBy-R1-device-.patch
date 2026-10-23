@@ -1,4 +1,4 @@
-From 202f948f2fa3914abc8e1bf4b93384f50f1fb20d Mon Sep 17 00:00:00 2001
+From fd0da91623d454d4b518d77c13c6a83ed39498c7 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Thu, 22 Oct 2026 22:15:09 +0000
 Subject: [PATCH 02/40] MIPS: ingenic: add a minimal X1600 and HiBy R1 device

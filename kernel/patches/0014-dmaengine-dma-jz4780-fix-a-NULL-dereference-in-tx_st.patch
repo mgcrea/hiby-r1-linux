@@ -1,4 +1,4 @@
-From c167c6d86b335bb4edf4f68591df8660351204fe Mon Sep 17 00:00:00 2001
+From 391b85ac8b6329d3c25f4778acf20090d941b67f Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:16:33 +0000
 Subject: [PATCH 14/40] dmaengine: dma-jz4780: fix a NULL dereference in

@@ -1,4 +1,4 @@
-From bfb916015946940b71b328019e5c1f767bf0ce71 Mon Sep 17 00:00:00 2001
+From 21c66155153aea8eedae6e60a0b8de78fefe1fac Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:59:44 +0000
 Subject: [PATCH 18/40] mfd: axp20x: add the AXP2101

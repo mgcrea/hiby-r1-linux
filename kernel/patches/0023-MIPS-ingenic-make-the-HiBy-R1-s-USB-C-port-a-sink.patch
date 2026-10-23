@@ -1,4 +1,4 @@
-From 099ed7db6dd51c7faa5d8ce6ec8ed7a56bd3b676 Mon Sep 17 00:00:00 2001
+From 79bf2f0228fd5f96d8e24b970d9f276fc948ddb0 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 08:43:25 +0000
 Subject: [PATCH 23/40] MIPS: ingenic: make the HiBy R1's USB-C port a sink

@@ -1,4 +1,4 @@
-From baa6ec5e3fe7efde90a682ffd4f6eb9597de631d Mon Sep 17 00:00:00 2001
+From 6f8606e53c31ffe23bd30a7e891f738475698332 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:27:24 +0000
 Subject: [PATCH 11/40] i2c: jz4780: add the X1600

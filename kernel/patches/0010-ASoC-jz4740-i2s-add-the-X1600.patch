@@ -1,4 +1,4 @@
-From 753c230cbad2b8e8814d6bee62358b50927427aa Mon Sep 17 00:00:00 2001
+From cd0f4b8edab8b375d135e0c492263935c145e68e Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:20:53 +0000
 Subject: [PATCH 10/40] ASoC: jz4740-i2s: add the X1600
@@ -9,16 +9,33 @@ what is written. With the X1000's settings, 44.1 kHz from a 22.5792 MHz
 MCLK writes 7, the register keeps 6 and the stream plays at 58.8 kHz
 (measured on a HiBy R1).
 
-Add an X1600 entry that picks even dividers and writes them as they are.
+Its AICCR also has a channel count in bits 27:24 that the driver never
+wrote. It held 1 (two channels) in every stream, left over from the
+earlier kernel, and with it a mono stream is taken two samples per frame,
+as left and right: it plays an octave high and ends in half the time even
+with MONO_TO_STEREO set. Write the number of channels minus one and mono
+plays at the right speed (a 6 s mono stream took 3 s before; 8 s took 7 s
+once the field was cleared after one second).
+
+Add an X1600 entry that picks even dividers, writes them as they are and
+sets the channel field.
 ---
- sound/soc/jz4740/jz4740-i2s.c | 31 ++++++++++++++++++++++++-------
- 1 file changed, 24 insertions(+), 7 deletions(-)
+ sound/soc/jz4740/jz4740-i2s.c | 44 +++++++++++++++++++++++++++++------
+ 1 file changed, 37 insertions(+), 7 deletions(-)
 
 diff --git a/sound/soc/jz4740/jz4740-i2s.c b/sound/soc/jz4740/jz4740-i2s.c
-index d36bbc8..a798bf0 100644
+index d36bbc8..5153fed 100644
 --- a/sound/soc/jz4740/jz4740-i2s.c
 +++ b/sound/soc/jz4740/jz4740-i2s.c
-@@ -71,6 +71,11 @@ struct i2s_soc_info {
+@@ -38,6 +38,7 @@
+ #define JZ_AIC_CONF_SYNC_CLK_MASTER	BIT(1)
+ #define JZ_AIC_CONF_ENABLE		BIT(0)
+ 
++#define JZ_AIC_CTRL_CHANNEL		GENMASK(27, 24)
+ #define JZ_AIC_CTRL_OUTPUT_SAMPLE_SIZE	GENMASK(21, 19)
+ #define JZ_AIC_CTRL_INPUT_SAMPLE_SIZE	GENMASK(18, 16)
+ #define JZ_AIC_CTRL_ENABLE_RX_DMA	BIT(15)
+@@ -71,6 +72,16 @@ struct i2s_soc_info {
  	struct reg_field field_i2sdiv_playback;
  
  	bool shared_fifo_flush;
@@ -27,10 +44,15 @@ index d36bbc8..a798bf0 100644
 +	 * minus one, and only keeps even values (X1600).
 +	 */
 +	bool i2sdiv_even;
++	/*
++	 * AICCR has the number of channels, minus one, in bits 27:24, which
++	 * the AIC uses to size a frame in the FIFO (X1600).
++	 */
++	bool channel_field;
  };
  
  struct jz4740_i2s {
-@@ -218,16 +223,17 @@ static int jz4740_i2s_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
+@@ -218,16 +229,17 @@ static int jz4740_i2s_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
  }
  
  static int jz4740_i2s_get_i2sdiv(unsigned long mclk, unsigned long rate,
@@ -51,18 +73,31 @@ index d36bbc8..a798bf0 100644
  
  	err1 = abs(rate1 - rate);
  	err2 = abs(rate2 - rate);
-@@ -241,8 +247,8 @@ static int jz4740_i2s_get_i2sdiv(unsigned long mclk, unsigned long rate,
+@@ -241,8 +253,8 @@ static int jz4740_i2s_get_i2sdiv(unsigned long mclk, unsigned long rate,
  	 */
  	if (div <= i2sdiv_max && err1 <= err2 && err1 < rate/20)
  		return div;
 -	if (div < i2sdiv_max && err2 < rate/20)
 -		return div + 1;
-+	if (div + step <= i2sdiv_max && err2 < rate/20)
++	if (div + step <= i2sdiv_max && err2 < rate / 20)
 +		return div + step;
  
  	return -EINVAL;
  }
-@@ -305,13 +311,14 @@ static int jz4740_i2s_hw_params(struct snd_pcm_substream *substream,
+@@ -281,6 +293,12 @@ static int jz4740_i2s_hw_params(struct snd_pcm_substream *substream,
+ 		ctrl &= ~JZ_AIC_CTRL_OUTPUT_SAMPLE_SIZE;
+ 		ctrl |= FIELD_PREP(JZ_AIC_CTRL_OUTPUT_SAMPLE_SIZE, sample_size);
+ 
++		if (i2s->soc_info->channel_field) {
++			ctrl &= ~JZ_AIC_CTRL_CHANNEL;
++			ctrl |= FIELD_PREP(JZ_AIC_CTRL_CHANNEL,
++					   params_channels(params) - 1);
++		}
++
+ 		if (params_channels(params) == 1)
+ 			ctrl |= JZ_AIC_CTRL_MONO_TO_STEREO;
+ 		else
+@@ -305,13 +323,14 @@ static int jz4740_i2s_hw_params(struct snd_pcm_substream *substream,
  	 */
  	if (conf & (JZ_AIC_CONF_BIT_CLK_MASTER | JZ_AIC_CONF_SYNC_CLK_MASTER)) {
  		div = jz4740_i2s_get_i2sdiv(clk_get_rate(i2s->clk_i2s),
@@ -79,7 +114,7 @@ index d36bbc8..a798bf0 100644
  
  	return 0;
  }
-@@ -382,6 +389,15 @@ static const struct i2s_soc_info x1000_i2s_soc_info = {
+@@ -382,6 +401,16 @@ static const struct i2s_soc_info x1000_i2s_soc_info = {
  	.field_i2sdiv_playback	= REG_FIELD(JZ_REG_AIC_CLK_DIV, 0, 8),
  };
  
@@ -90,12 +125,13 @@ index d36bbc8..a798bf0 100644
 +	.field_i2sdiv_capture	= REG_FIELD(JZ_REG_AIC_CLK_DIV, 0, 8),
 +	.field_i2sdiv_playback	= REG_FIELD(JZ_REG_AIC_CLK_DIV, 0, 8),
 +	.i2sdiv_even = true,
++	.channel_field = true,
 +};
 +
  static struct snd_soc_dai_driver jz4770_i2s_dai = {
  	.playback = {
  		.channels_min = 1,
-@@ -493,6 +509,7 @@ static const struct of_device_id jz4740_of_matches[] = {
+@@ -493,6 +522,7 @@ static const struct of_device_id jz4740_of_matches[] = {
  	{ .compatible = "ingenic,jz4770-i2s", .data = &jz4770_i2s_soc_info },
  	{ .compatible = "ingenic,jz4780-i2s", .data = &jz4780_i2s_soc_info },
  	{ .compatible = "ingenic,x1000-i2s", .data = &x1000_i2s_soc_info },

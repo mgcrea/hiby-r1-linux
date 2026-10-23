@@ -1,4 +1,4 @@
-From 161289f0b2db8bef2ad5a4c2a05d3ec9515d2a3c Mon Sep 17 00:00:00 2001
+From bd861987ddd9809fd1c265057b735d25392f8765 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:59:44 +0000
 Subject: [PATCH 22/40] MIPS: ingenic: add the HiBy R1's PMIC and battery gauge

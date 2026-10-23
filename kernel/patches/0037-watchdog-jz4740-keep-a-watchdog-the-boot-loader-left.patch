@@ -1,4 +1,4 @@
-From 3324ca88cfd1316b9fdfd0a309f791b3cda2f607 Mon Sep 17 00:00:00 2001
+From dc5947b90b4372973cc5765b461bfb2f5283ea81 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 12:24:01 +0000
 Subject: [PATCH 37/40] watchdog: jz4740: keep a watchdog the boot loader left

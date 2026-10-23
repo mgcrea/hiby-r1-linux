@@ -1,4 +1,4 @@
-From 43e136b714bfa0b763c66725fe3be4f8ebfaefac Mon Sep 17 00:00:00 2001
+From a7d7b30fc851591125f32c99678e48ce0f72bc67 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 08:09:21 +0000
 Subject: [PATCH 20/40] power: supply: axp20x_usb_power: add the AXP2101

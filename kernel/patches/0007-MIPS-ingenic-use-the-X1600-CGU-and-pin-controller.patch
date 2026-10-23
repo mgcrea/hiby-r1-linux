@@ -1,4 +1,4 @@
-From 9c0f1cfb86137e03aedd93973cc3b8c98c4744d7 Mon Sep 17 00:00:00 2001
+From d64bc2ca6d29ccf25440533680b5f34da80ffa10 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 06:35:45 +0000
 Subject: [PATCH 07/40] MIPS: ingenic: use the X1600 CGU and pin controller
