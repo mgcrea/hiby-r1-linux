@@ -63,8 +63,9 @@ extern char r1jump_stub[], r1jump_stub_end[];
 /*
  * X1600 watchdog at 0x10002000 (TCU base). The sequence copies the stock
  * driver's ingenic_wdt_set_timeout, read from its disassembly: TDR is a
- * 32-bit register (timeout in the low half, ticks * 2 / 3 in the high
- * half), and TCSR bit 10 clears the counter, as its ping does.
+ * 32-bit register (timeout in the low half, which resets; ticks * 2 / 3 in
+ * the high half, purpose unknown), and TCSR bit 10 clears the counter, as
+ * its ping does.
  */
 #define TCU_PHYS	0x10002000
 #define WDT_TDR		0x00
@@ -81,7 +82,11 @@ extern char r1jump_stub[], r1jump_stub_end[];
 static void arm_watchdog(unsigned int secs)
 {
 	void __iomem *tcu = (void __iomem *)CKSEG1ADDR(TCU_PHYS);
-	/* 32768 Hz RTC clock / 1024 = 32 ticks per second. */
+	/*
+	 * Assumes 32768 Hz / 1024 = 32 ticks per second, but the X1600's "RTC"
+	 * input here is EXCLK / 512: 45.8 ticks per second, so the reset comes
+	 * after about 0.7 * secs (docs/kernel.md, "Watchdog").
+	 */
 	u32 ticks = min_t(u32, secs * 32, 0xffff);
 
 	__raw_writeb(0, tcu + WDT_TCER);
