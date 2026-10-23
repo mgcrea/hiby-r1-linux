@@ -29,7 +29,7 @@ other than the stock one. Observed on the R1 with patched firmware 1.6 on
 ## Mainline status (checked against torvalds master, 7.3 / 7.4 merge window, 2026-10-22)
 
 - **No X1600 platform:** there's no `MACH_X1600`, no X1600 clock (CGU) driver and no `x1600.dtsi`. Ingenic support stops at the X1000 and X1830.
-- **Already X1600-aware:** `pinctrl-ingenic` (X1600 pin data; its `IS_ENABLED(CONFIG_MACH_X1600)` refers to an option that doesn't exist yet) and dwc2 (`ingenic,x1600-otg`).
+- **Already X1600-aware:** dwc2 (`ingenic,x1600-otg`). The 7.3 release has no X1600 pin data in `pinctrl-ingenic` (an earlier note said it had; master was not rechecked).
 - **Probably reusable through the X1000 compatibles:** UART, I2C, TCU/timers/PWM, OST, MMC, DMA, I2S and SPI (SSI).
 - **Board chips covered:** CS43131 (`cs43130` driver), CW2015, BCM43430 Wi-Fi (`brcmfmac`). Touch may be covered by `hynitron,cst816s`; not checked against the R1's `cst8xx`.
 - **Missing:**
@@ -48,7 +48,7 @@ other than the stock one. Observed on the R1 with patched firmware 1.6 on
 - **Rockbox `utils/jztool/src/x1600.c`:** X1600 boot-ROM USB loading with a DDR-init stage. In boot-ROM mode the R1 enumerates as `a108:eaef`. How to enter that mode on the R1 was not found.
 - **[Ingenic-community/linux](https://github.com/Ingenic-community/linux):** 6.1, with X1600 support mostly untested.
 
-## Plan (approved 2026-10-22, no port code written yet)
+## Plan (approved 2026-10-22)
 
 - **Target:** current mainline, kept as a patch series in `kernel/`.
 - **Boot:** the stock SPL and its kernel partition, with the device tree built in.
@@ -60,6 +60,21 @@ other than the stock one. Observed on the R1 with patched firmware 1.6 on
   4. audio;
   5. AXP2101 and power;
   6. later: NAND, Wi-Fi/BT, USB DAC.
+## Mainline on the R1 (2026-10-23)
+
+- **Status:** Linux 7.3 boots through `r1jump` to a busybox initramfs, with its console on the screen and the uptime ticking. Stage 1 of the plan (SoC base to a console) is reached without an X1600 clock driver.
+  - **Verified from a photo of the screen:** system type X1600, `Ingenic XBurst V0.0 FPU V0.0`, BogoMIPS 1099.36 (as under the stock kernel); 56,960 KB total and 49,864 KB free (stock leaves about 1.5 MB free); `simple-framebuffer` registers fb0 and the console runs at 60×50; `/init` starts at 0.28 s and the uptime advances. No errors visible.
+- **Building:** `kernel/build.sh` resets a 7.3 tree in the `r1-linux` Docker volume (Linux needs a case-sensitive filesystem), applies `kernel/patches/`, merges `kernel/r1.config` into `cu1000-neo_defconfig` and writes `kernel/out/r1-linux.bin` (vmlinux.bin with the DTB appended, `MIPS_RAW_APPENDED_DTB`). It prints the load address (0x80100000) and entry point. To change the kernel, commit on branch `r1` in the volume tree, then `build.sh patches`.
+- **Booting:** push `r1-linux.bin` and `r1jump.ko` to `/tmp`, stop r1player (SIGSTOP), point the display at page 0 (`devmem 0x02518004 32 0x02600000`), then `insmod r1jump.ko image=/tmp/r1-linux.bin load=0x80100000 entry=<kernel_entry> wdt_secs=120`. The watchdog resets the R1 back into r1player about 85 s later (not 120: its real rate isn't the assumed 32 Hz; not investigated).
+- **What the X1600 needed:**
+  - **PRId:** the core reports 0x00d00000 (company Ingenic D0, implementation 0), which `cpu_probe_ingenic()` rejects with a silent `panic("Unknown Ingenic Processor ID!")` before any console exists. A patch handles it like the X1830's XBurst1.
+  - **OST timer:** same registers as the X1000 (`ingenic,x1000-ost`), but on CPU interrupt 4, not 3. Its only clock input is a fixed 24 MHz `ext`.
+  - **Interrupt controller:** the X1000/JZ4780 one at 0x10001000, on CPU interrupt 2.
+  - **Display:** left running by the stock kernel. The controller at 0x13050000 uses a different layout from the X1000's: register 0x1000 holds the address of a self-linked frame descriptor in RAM (0x02518000), whose second word is the page being shown. The device tree reserves the descriptor and both pages, and `simple-framebuffer` draws on page 0.
+  - **The stock device tree** is readable at `/sys/firmware/fdt`; a decompiled copy is in `kernel/out/stock-dt/` (untracked) and gives every block's address and interrupt.
+- **Boot marks:** the `DEBUG` patch paints a 16-row stripe on both framebuffer pages at each milestone: black at row 352 (first instruction of `kernel_entry`), grey at 376 (BSS cleared), then `start_kernel` steps from row 400 (n = 0..8) and `setup_arch` steps (n = 10..16), every 24 rows. This is how the PRId panic was found.
+- **Kernel log after the reset:** mostly lost. `__log_buf` (phys 0x976134) lies past the stock kernel's image, but the stock system reuses that memory before ADB comes up.
+
 - **Jumping to our own code works (2026-10-23).** `r1jump` loaded `kernel/tools/fbpaint` (176 bytes at `0x80010000`), which painted colour bands over the whole screen; the watchdog brought the R1 back about 15 s later.
   - **Why the first attempt failed:** the stub, its params and the page list were written through cached KSEG0 but executed and read through uncached KSEG1, so the CPU ran stale RAM (254 of the stub's 276 bytes hadn't reached it). `r1jump` now writes them back from L1 and L2 first, and a dry run prints `uncached view differs: stub 0, params 0, list 0 bytes` to show it.
   - **The screen is a debug channel:** the LCD controller refreshes continuously at 60 Hz (the `jzfb` interrupt), straight from the framebuffer at physical `0x02600000` (480×800 RGB565, 960-byte lines, two pages). A new kernel can paint progress there with uncached stores and no display driver, as long as it leaves the LCD controller and its clocks alone. Writes from Linux through `/dev/mem` show up too.
