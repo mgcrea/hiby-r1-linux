@@ -1,0 +1,56 @@
+From ade16eec961d8136b4d85da1cdfebfeb482e2e77 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 07:02:43 +0000
+Subject: [PATCH 08/14] dt-bindings: add X1600 compatibles for the Ingenic DMA,
+ I2C and I2S
+
+The X1600's DMA controller works as the X1830's. Its I2C and I2S
+controllers have their own compatibles: a register offset and a clock
+divider differ from the X1000's.
+---
+ Documentation/devicetree/bindings/dma/ingenic,dma.yaml   | 3 +++
+ Documentation/devicetree/bindings/i2c/ingenic,i2c.yaml   | 1 +
+ Documentation/devicetree/bindings/sound/ingenic,aic.yaml | 1 +
+ 3 files changed, 5 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/dma/ingenic,dma.yaml b/Documentation/devicetree/bindings/dma/ingenic,dma.yaml
+index d9cca30..4f8284f 100644
+--- a/Documentation/devicetree/bindings/dma/ingenic,dma.yaml
++++ b/Documentation/devicetree/bindings/dma/ingenic,dma.yaml
+@@ -32,6 +32,9 @@ properties:
+       - items:
+           - const: ingenic,jz4770-bdma
+           - const: ingenic,jz4760b-bdma
++      - items:
++          - const: ingenic,x1600-dma
++          - const: ingenic,x1830-dma
+ 
+   reg:
+     items:
+diff --git a/Documentation/devicetree/bindings/i2c/ingenic,i2c.yaml b/Documentation/devicetree/bindings/i2c/ingenic,i2c.yaml
+index b61fdc9..43de285 100644
+--- a/Documentation/devicetree/bindings/i2c/ingenic,i2c.yaml
++++ b/Documentation/devicetree/bindings/i2c/ingenic,i2c.yaml
+@@ -21,6 +21,7 @@ properties:
+       - enum:
+           - ingenic,jz4770-i2c
+           - ingenic,x1000-i2c
++          - ingenic,x1600-i2c
+       - items:
+           - const: ingenic,jz4780-i2c
+           - const: ingenic,jz4770-i2c
+diff --git a/Documentation/devicetree/bindings/sound/ingenic,aic.yaml b/Documentation/devicetree/bindings/sound/ingenic,aic.yaml
+index d15c000..9ca75fb 100644
+--- a/Documentation/devicetree/bindings/sound/ingenic,aic.yaml
++++ b/Documentation/devicetree/bindings/sound/ingenic,aic.yaml
+@@ -24,6 +24,7 @@ properties:
+           - ingenic,jz4770-i2s
+           - ingenic,jz4780-i2s
+           - ingenic,x1000-i2s
++          - ingenic,x1600-i2s
+       - items:
+           - const: ingenic,jz4725b-i2s
+           - const: ingenic,jz4740-i2s
+-- 
+2.39.5
+

@@ -1,0 +1,109 @@
+From c24f61c1b232e77c4e69617cb61ca5a7a38babd2 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 07:29:14 +0000
+Subject: [PATCH 11/14] ASoC: cs43130: take the frame layout from set_tdm_slot
+
+The driver works out the slot width from the frequency passed to the
+DAI's set_sysclk(), which it takes for SCLK. Generic cards pass MCLK
+there: with simple-audio-card and mclk-fs = 512, a 44.1 kHz stream on a
+HiBy R1 (X1600 I2S master, 64 SCLK per frame) gets 256-bit slots and the
+CS43131 plays noise.
+
+Add set_tdm_slot() so a card can set the slot width, two slots of 16 to
+32 bits, and use it over the derived width when it is set.
+---
+ sound/soc/codecs/cs43130.c | 50 ++++++++++++++++++++++++++++++--------
+ sound/soc/codecs/cs43130.h |  1 +
+ 2 files changed, 41 insertions(+), 10 deletions(-)
+
+diff --git a/sound/soc/codecs/cs43130.c b/sound/soc/codecs/cs43130.c
+index 48d88da..8450794 100644
+--- a/sound/soc/codecs/cs43130.c
++++ b/sound/soc/codecs/cs43130.c
+@@ -952,18 +952,24 @@ static int cs43130_hw_params(struct snd_pcm_substream *substream,
+ 		break;
+ 	}
+ 
+-	if (!sclk && cs43130->dais[dai->id].dai_mode == SND_SOC_DAIFMT_CBP_CFP)
+-		/* Calculate SCLK in master mode if unassigned */
+-		sclk = params_rate(params) * bitwidth_dai *
+-		       params_channels(params);
++	if (cs43130->dais[dai->id].slot_width) {
++		/* The slot width set with set_tdm_slot() */
++		bitwidth_sclk = cs43130->dais[dai->id].slot_width;
++	} else {
++		if (!sclk && cs43130->dais[dai->id].dai_mode == SND_SOC_DAIFMT_CBP_CFP)
++			/* Calculate SCLK in master mode if unassigned */
++			sclk = params_rate(params) * bitwidth_dai *
++			       params_channels(params);
++
++		if (!sclk) {
++			/* at this point, SCLK must be set */
++			dev_err(cs43130->dev, "SCLK freq is not set\n");
++			return -EINVAL;
++		}
+ 
+-	if (!sclk) {
+-		/* at this point, SCLK must be set */
+-		dev_err(cs43130->dev, "SCLK freq is not set\n");
+-		return -EINVAL;
++		bitwidth_sclk = (sclk / params_rate(params)) /
++				params_channels(params);
+ 	}
+-
+-	bitwidth_sclk = (sclk / params_rate(params)) / params_channels(params);
+ 	if (bitwidth_sclk < bitwidth_dai) {
+ 		dev_err(cs43130->dev, "Format not supported: SCLK freq is too low\n");
+ 		return -EINVAL;
+@@ -1609,12 +1615,36 @@ static int cs43130_set_sysclk(struct snd_soc_dai *codec_dai,
+ 	return 0;
+ }
+ 
++/*
++ * Sets the frame layout directly: two slots of slot_width bits, which then
++ * takes precedence over the layout derived from the set_sysclk() frequency.
++ * Generic sound cards pass MCLK to set_sysclk(), not SCLK. Zero slots go
++ * back to the derived layout.
++ */
++static int cs43130_set_tdm_slot(struct snd_soc_dai *dai, unsigned int tx_mask,
++				unsigned int rx_mask, int slots, int slot_width)
++{
++	struct snd_soc_component *component = dai->component;
++	struct cs43130_private *cs43130 = snd_soc_component_get_drvdata(component);
++
++	if (!slots) {
++		cs43130->dais[dai->id].slot_width = 0;
++		return 0;
++	}
++	if (slots != 2 || slot_width < 16 || slot_width > 32)
++		return -EINVAL;
++
++	cs43130->dais[dai->id].slot_width = slot_width;
++	return 0;
++}
++
+ static const struct snd_soc_dai_ops cs43130_pcm_ops = {
+ 	.startup	= cs43130_pcm_startup,
+ 	.hw_params	= cs43130_hw_params,
+ 	.hw_free	= cs43130_hw_free,
+ 	.set_sysclk	= cs43130_set_sysclk,
+ 	.set_fmt	= cs43130_pcm_set_fmt,
++	.set_tdm_slot	= cs43130_set_tdm_slot,
+ };
+ 
+ static const struct snd_soc_dai_ops cs43130_dop_ops = {
+diff --git a/sound/soc/codecs/cs43130.h b/sound/soc/codecs/cs43130.h
+index dbdb5b2..6026c14 100644
+--- a/sound/soc/codecs/cs43130.h
++++ b/sound/soc/codecs/cs43130.h
+@@ -495,6 +495,7 @@ static const char *const cs43130_supply_names[CS43130_NUM_SUPPLIES] = {
+ 
+ struct cs43130_dai {
+ 	unsigned int			sclk;
++	unsigned int			slot_width;
+ 	unsigned int			dai_format;
+ 	unsigned int			dai_mode;
+ 	unsigned int			dai_invert;
+-- 
+2.39.5
+

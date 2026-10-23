@@ -1,0 +1,232 @@
+From 4de6482902a0574dcd18cc601fce2160d2c97cc8 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 07:02:43 +0000
+Subject: [PATCH 12/14] MIPS: ingenic: add X1600 audio and I2C, and the HiBy
+ R1's DAC and touch panel
+
+X1600: the DMA controller, the two I2C controllers and the AIC in I2S
+mode, at the addresses and interrupts of the vendor device tree.
+
+HiBy R1: the CS43131 DAC on a bit-banged I2C bus (PB30/PB31, as the
+stock firmware drives it), powered through PB2 and reset through PB21,
+behind a simple-audio-card with the X1600 as clock master; the
+CST816-compatible touch panel at 0x15 on I2C1.
+---
+ arch/mips/boot/dts/ingenic/hiby-r1.dts | 106 +++++++++++++++++++++++++
+ arch/mips/boot/dts/ingenic/x1600.dtsi  |  62 +++++++++++++++
+ 2 files changed, 168 insertions(+)
+
+diff --git a/arch/mips/boot/dts/ingenic/hiby-r1.dts b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+index 9a08540..4da60f9 100644
+--- a/arch/mips/boot/dts/ingenic/hiby-r1.dts
++++ b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+@@ -3,6 +3,9 @@
+ 
+ #include "x1600.dtsi"
+ 
++#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/interrupt-controller/irq.h>
++
+ / {
+ 	compatible = "hiby,r1", "ingenic,x1600";
+ 	model = "HiBy R1";
+@@ -48,6 +51,96 @@ framebuffer@2600000 {
+ 		/* Keeps the display's pixel clock on. */
+ 		clocks = <&cgu X1600_CLK_LCD>;
+ 	};
++
++	/* PB2 powers the DAC; which of its rails it switches isn't known. */
++	vdac: regulator-dac {
++		compatible = "regulator-fixed";
++		regulator-name = "dac";
++		gpio = <&gpb 2 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		startup-delay-us = <10000>;
++	};
++
++	/* The DAC's bus is bit-banged, as on the stock firmware. */
++	i2c-dac {
++		compatible = "i2c-gpio";
++		scl-gpios = <&gpb 30 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
++		sda-gpios = <&gpb 31 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
++		i2c-gpio,delay-us = <2>;
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		dac: audio-codec@30 {
++			compatible = "cirrus,cs43131";
++			reg = <0x30>;
++			#sound-dai-cells = <0>;
++
++			/*
++			 * Active low, but the driver drives 1 to take the DAC
++			 * out of reset, so it's described as active high.
++			 */
++			reset-gpios = <&gpb 21 GPIO_ACTIVE_HIGH>;
++
++			VA-supply = <&vdac>;
++			VP-supply = <&vdac>;
++			VCP-supply = <&vdac>;
++			VD-supply = <&vdac>;
++			VL-supply = <&vdac>;
++		};
++	};
++
++	sound {
++		compatible = "simple-audio-card";
++		simple-audio-card,name = "HiBy R1";
++		simple-audio-card,format = "i2s";
++		simple-audio-card,bitclock-master = <&cpu_dai>;
++		simple-audio-card,frame-master = <&cpu_dai>;
++		/* 22.5792 MHz at 44.1 kHz, 24.576 MHz at 48 kHz, as stock. */
++		simple-audio-card,mclk-fs = <512>;
++
++		cpu_dai: simple-audio-card,cpu {
++			sound-dai = <&i2s>;
++			/* The card sets the I2S clock to the MCLK rate. */
++			clocks = <&cgu X1600_CLK_I2S0_TX>;
++		};
++
++		simple-audio-card,codec {
++			sound-dai = <&dac>;
++			/*
++			 * The X1600 sends 64 bit clocks per frame. Said here
++			 * because the DAC driver otherwise derives the slot
++			 * width from MCLK.
++			 */
++			dai-tdm-slot-num = <2>;
++			dai-tdm-slot-width = <32>;
++		};
++	};
++};
++
++&i2c1 {
++	status = "okay";
++
++	pinctrl-names = "default";
++	pinctrl-0 = <&pins_i2c1>;
++
++	clock-frequency = <400000>;
++
++	touchscreen@15 {
++		compatible = "hynitron,cst816s";
++		reg = <0x15>;
++
++		interrupt-parent = <&gpa>;
++		interrupts = <16 IRQ_TYPE_EDGE_FALLING>;
++
++		reset-gpios = <&gpa 17 GPIO_ACTIVE_LOW>;
++	};
++};
++
++&i2s {
++	status = "okay";
++
++	pinctrl-names = "default";
++	pinctrl-0 = <&pins_i2s>;
+ };
+ 
+ /* The SD card slot. MSC0 is probably the Wi-Fi chip's SDIO link. */
+@@ -75,6 +168,19 @@ &otg {
+ };
+ 
+ &pinctrl {
++	pins_i2c1: i2c1 {
++		function = "i2c1";
++		groups = "i2c1-data-b-19";
++		bias-disable;
++	};
++
++	/* Transmit only. PB22, the receive MCLK, is an interrupt input here. */
++	pins_i2s: i2s {
++		function = "i2s";
++		groups = "i2s-data-tx", "i2s-clk-tx", "i2s-sysclk-tx";
++		bias-disable;
++	};
++
+ 	pins_msc1: msc1 {
+ 		function = "mmc1";
+ 		groups = "mmc1-1bit", "mmc1-4bit";
+diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
+index 0505340..264101e 100644
+--- a/arch/mips/boot/dts/ingenic/x1600.dtsi
++++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
+@@ -131,6 +131,56 @@ gpd: gpio@3 {
+ 		};
+ 	};
+ 
++	i2c0: i2c@10050000 {
++		compatible = "ingenic,x1600-i2c";
++		reg = <0x10050000 0x1000>;
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		interrupt-parent = <&intc>;
++		interrupts = <61>;
++
++		clocks = <&cgu X1600_CLK_I2C0>;
++
++		status = "disabled";
++	};
++
++	i2c1: i2c@10051000 {
++		compatible = "ingenic,x1600-i2c";
++		reg = <0x10051000 0x1000>;
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		interrupt-parent = <&intc>;
++		interrupts = <60>;
++
++		clocks = <&cgu X1600_CLK_I2C1>;
++
++		status = "disabled";
++	};
++
++	i2s: i2s@10079000 {
++		compatible = "ingenic,x1600-i2s";
++		reg = <0x10079000 0x38>;
++
++		#sound-dai-cells = <0>;
++
++		interrupt-parent = <&intc>;
++		interrupts = <0>;
++
++		/*
++		 * The X1600 has separate transmit and receive bit clocks; the
++		 * driver programs the AIC to run both from the transmit ones.
++		 */
++		clocks = <&cgu X1600_CLK_AIC>, <&cgu X1600_CLK_I2S0_TX>;
++		clock-names = "aic", "i2s";
++
++		dmas = <&pdma 63 0xffffffff>, <&pdma 62 0xffffffff>;
++		dma-names = "rx", "tx";
++
++		status = "disabled";
++	};
++
+ 	ost: timer@12000000 {
+ 		compatible = "ingenic,x1600-ost", "ingenic,x1000-ost";
+ 		reg = <0x12000000 0x3c>;
+@@ -145,6 +195,18 @@ ost: timer@12000000 {
+ 		interrupts = <4>;
+ 	};
+ 
++	pdma: dma-controller@13420000 {
++		compatible = "ingenic,x1600-dma", "ingenic,x1830-dma";
++		reg = <0x13420000 0x400>, <0x13421000 0x40>;
++
++		#dma-cells = <2>;
++
++		interrupt-parent = <&intc>;
++		interrupts = <3>;
++
++		clocks = <&cgu X1600_CLK_PDMA>;
++	};
++
+ 	mmc0: mmc@13450000 {
+ 		compatible = "ingenic,x1600-mmc", "ingenic,x1000-mmc";
+ 		reg = <0x13450000 0x10000>;
+-- 
+2.39.5
+

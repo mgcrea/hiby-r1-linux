@@ -1,0 +1,47 @@
+From b1d5a98e07126b5773540a5cfdf861f4e871db4b Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 07:02:43 +0000
+Subject: [PATCH 07/14] pinctrl: ingenic: add X1600 groups for each I2S system
+ clock
+
+The X1600 has a system clock (MCLK) pin for each direction: PB22 for
+receive, PB26 for transmit. "i2s-sysclk" takes both, which a board that
+only plays can't use when PB22 has another job. Add "i2s-sysclk-rx" and
+"i2s-sysclk-tx" for one each.
+---
+ drivers/pinctrl/pinctrl-ingenic.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/pinctrl/pinctrl-ingenic.c b/drivers/pinctrl/pinctrl-ingenic.c
+index 1aa6a6d..28e7f18 100644
+--- a/drivers/pinctrl/pinctrl-ingenic.c
++++ b/drivers/pinctrl/pinctrl-ingenic.c
+@@ -2411,6 +2411,8 @@ static int x1600_i2s_data_rx_pins[] = { 0x35, };
+ static int x1600_i2s_clk_rx_pins[] = { 0x37, 0x38, };
+ static int x1600_i2s_clk_tx_pins[] = { 0x3b, 0x3c, };
+ static int x1600_i2s_sysclk_pins[] = { 0x36, 0x3a, };
++static int x1600_i2s_sysclk_rx_pins[] = { 0x36, };
++static int x1600_i2s_sysclk_tx_pins[] = { 0x3a, };
+ 
+ static int x1600_cim_pins[] = {
+ 	0x14, 0x16, 0x15, 0x18, 0x13,
+@@ -2493,6 +2495,8 @@ static const struct group_desc x1600_groups[] = {
+ 	INGENIC_PIN_GROUP("i2s-clk-rx", x1600_i2s_clk_rx, 0),
+ 	INGENIC_PIN_GROUP("i2s-clk-tx", x1600_i2s_clk_tx, 0),
+ 	INGENIC_PIN_GROUP("i2s-sysclk", x1600_i2s_sysclk, 0),
++	INGENIC_PIN_GROUP("i2s-sysclk-rx", x1600_i2s_sysclk_rx, 0),
++	INGENIC_PIN_GROUP("i2s-sysclk-tx", x1600_i2s_sysclk_tx, 0),
+ 	INGENIC_PIN_GROUP("cim-data", x1600_cim, 2),
+ 	INGENIC_PIN_GROUP("slcd-8bit", x1600_slcd_8bit, 1),
+ 	INGENIC_PIN_GROUP("slcd-16bit", x1600_slcd_16bit, 1),
+@@ -2539,6 +2543,7 @@ static const char * const x1600_i2c1_groups[] = { "i2c1-data-b-15", "i2c1-data-b
+ 
+ static const char * const x1600_i2s_groups[] = {
+ 	"i2s-data-tx", "i2s-data-rx", "i2s-clk-rx", "i2s-clk-tx", "i2s-sysclk",
++	"i2s-sysclk-rx", "i2s-sysclk-tx",
+ };
+ 
+ static const char * const x1600_cim_groups[] = { "cim-data", };
+-- 
+2.39.5
+

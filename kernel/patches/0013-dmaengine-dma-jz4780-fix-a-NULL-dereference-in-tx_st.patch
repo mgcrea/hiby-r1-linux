@@ -1,0 +1,34 @@
+From 0a01b0c29ce8e88321e1fe0061f3d8ed0340ba48 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 07:16:33 +0000
+Subject: [PATCH 13/14] dmaengine: dma-jz4780: fix a NULL dereference in
+ tx_status after terminate
+
+jz4780_dma_terminate_all() clears jzchan->desc, and since sound's
+snd_dmaengine_pcm_sync_stop() calls dmaengine_tx_status() after stopping
+a cyclic transfer, tx_status() is called with no current descriptor and
+a cookie that is no longer on the channel's lists. It then reads
+jzchan->desc->vdesc.tx.cookie and oopses: closing a playback stream
+panics an X1600 (HiBy R1) every time.
+
+Only compare the cookie with the current descriptor's when there is one.
+---
+ drivers/dma/dma-jz4780.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/dma/dma-jz4780.c b/drivers/dma/dma-jz4780.c
+index 6070dfd..7f827be 100644
+--- a/drivers/dma/dma-jz4780.c
++++ b/drivers/dma/dma-jz4780.c
+@@ -658,7 +658,7 @@ static enum dma_status jz4780_dma_tx_status(struct dma_chan *chan,
+ 		/* On the issued list, so hasn't been processed yet */
+ 		residue = jz4780_dma_desc_residue(jzchan,
+ 					to_jz4780_dma_desc(vdesc), 0);
+-	} else if (cookie == jzchan->desc->vdesc.tx.cookie) {
++	} else if (jzchan->desc && cookie == jzchan->desc->vdesc.tx.cookie) {
+ 		residue = jz4780_dma_desc_residue(jzchan, jzchan->desc,
+ 					jzchan->curr_hwdesc + 1);
+ 	}
+-- 
+2.39.5
+

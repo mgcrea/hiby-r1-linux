@@ -13,3 +13,5 @@ dir /mnt/sd 0755 0 0
 file /bin/busybox /bin/busybox 0755 0 0
 file /init /r1/initramfs/init 0755 0 0
 file /sbin/r1-reboot /r1/initramfs/r1-reboot 0755 0 0
+file /usr/bin/tinymix /opt/tinyalsa/tinymix 0755 0 0
+file /usr/bin/r1tone /src/build-arm64/r1tone 0755 0 0

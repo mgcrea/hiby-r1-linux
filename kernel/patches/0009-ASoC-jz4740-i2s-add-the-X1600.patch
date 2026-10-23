@@ -1,0 +1,108 @@
+From a4ecf64ca94e266e8e1be433b468968b358c8361 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 07:20:53 +0000
+Subject: [PATCH 09/14] ASoC: jz4740-i2s: add the X1600
+
+The X1600's AIC is the X1000's, but its I2SDIV holds the bit clock
+divider itself, not the divider minus one, and drops the lowest bit of
+what is written. With the X1000's settings, 44.1 kHz from a 22.5792 MHz
+MCLK writes 7, the register keeps 6 and the stream plays at 58.8 kHz
+(measured on a HiBy R1).
+
+Add an X1600 entry that picks even dividers and writes them as they are.
+---
+ sound/soc/jz4740/jz4740-i2s.c | 31 ++++++++++++++++++++++++-------
+ 1 file changed, 24 insertions(+), 7 deletions(-)
+
+diff --git a/sound/soc/jz4740/jz4740-i2s.c b/sound/soc/jz4740/jz4740-i2s.c
+index d36bbc8..a798bf0 100644
+--- a/sound/soc/jz4740/jz4740-i2s.c
++++ b/sound/soc/jz4740/jz4740-i2s.c
+@@ -71,6 +71,11 @@ struct i2s_soc_info {
+ 	struct reg_field field_i2sdiv_playback;
+ 
+ 	bool shared_fifo_flush;
++	/*
++	 * I2SDIV holds the bit clock divider itself rather than the divider
++	 * minus one, and only keeps even values (X1600).
++	 */
++	bool i2sdiv_even;
+ };
+ 
+ struct jz4740_i2s {
+@@ -218,16 +223,17 @@ static int jz4740_i2s_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
+ }
+ 
+ static int jz4740_i2s_get_i2sdiv(unsigned long mclk, unsigned long rate,
+-				 unsigned long i2sdiv_max)
++				 unsigned long i2sdiv_max, unsigned int step)
+ {
+ 	unsigned long div, rate1, rate2, err1, err2;
+ 
+ 	div = mclk / (64 * rate);
++	div -= div % step;
+ 	if (div == 0)
+-		div = 1;
++		div = step;
+ 
+ 	rate1 = mclk / (64 * div);
+-	rate2 = mclk / (64 * (div + 1));
++	rate2 = mclk / (64 * (div + step));
+ 
+ 	err1 = abs(rate1 - rate);
+ 	err2 = abs(rate2 - rate);
+@@ -241,8 +247,8 @@ static int jz4740_i2s_get_i2sdiv(unsigned long mclk, unsigned long rate,
+ 	 */
+ 	if (div <= i2sdiv_max && err1 <= err2 && err1 < rate/20)
+ 		return div;
+-	if (div < i2sdiv_max && err2 < rate/20)
+-		return div + 1;
++	if (div + step <= i2sdiv_max && err2 < rate/20)
++		return div + step;
+ 
+ 	return -EINVAL;
+ }
+@@ -305,13 +311,14 @@ static int jz4740_i2s_hw_params(struct snd_pcm_substream *substream,
+ 	 */
+ 	if (conf & (JZ_AIC_CONF_BIT_CLK_MASTER | JZ_AIC_CONF_SYNC_CLK_MASTER)) {
+ 		div = jz4740_i2s_get_i2sdiv(clk_get_rate(i2s->clk_i2s),
+-					    params_rate(params), i2sdiv_max);
++					    params_rate(params), i2sdiv_max,
++					    i2s->soc_info->i2sdiv_even ? 2 : 1);
+ 		if (div < 0)
+ 			return div;
+ 	}
+ 
+ 	regmap_write(i2s->regmap, JZ_REG_AIC_CTRL, ctrl);
+-	regmap_field_write(div_field, div - 1);
++	regmap_field_write(div_field, i2s->soc_info->i2sdiv_even ? div : div - 1);
+ 
+ 	return 0;
+ }
+@@ -382,6 +389,15 @@ static const struct i2s_soc_info x1000_i2s_soc_info = {
+ 	.field_i2sdiv_playback	= REG_FIELD(JZ_REG_AIC_CLK_DIV, 0, 8),
+ };
+ 
++static const struct i2s_soc_info x1600_i2s_soc_info = {
++	.dai = &jz4740_i2s_dai,
++	.field_rx_fifo_thresh	= REG_FIELD(JZ_REG_AIC_CONF, 24, 27),
++	.field_tx_fifo_thresh	= REG_FIELD(JZ_REG_AIC_CONF, 16, 20),
++	.field_i2sdiv_capture	= REG_FIELD(JZ_REG_AIC_CLK_DIV, 0, 8),
++	.field_i2sdiv_playback	= REG_FIELD(JZ_REG_AIC_CLK_DIV, 0, 8),
++	.i2sdiv_even = true,
++};
++
+ static struct snd_soc_dai_driver jz4770_i2s_dai = {
+ 	.playback = {
+ 		.channels_min = 1,
+@@ -493,6 +509,7 @@ static const struct of_device_id jz4740_of_matches[] = {
+ 	{ .compatible = "ingenic,jz4770-i2s", .data = &jz4770_i2s_soc_info },
+ 	{ .compatible = "ingenic,jz4780-i2s", .data = &jz4780_i2s_soc_info },
+ 	{ .compatible = "ingenic,x1000-i2s", .data = &x1000_i2s_soc_info },
++	{ .compatible = "ingenic,x1600-i2s", .data = &x1600_i2s_soc_info },
+ 	{ /* sentinel */ }
+ };
+ MODULE_DEVICE_TABLE(of, jz4740_of_matches);
+-- 
+2.39.5
+

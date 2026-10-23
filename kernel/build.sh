@@ -63,6 +63,9 @@ docker run --rm -v r1-linux:/src -v "$here:/r1" r1-mainline sh -euc '
   grep -E "^# CONFIG_[A-Z0-9_]+ is not set$" /r1/r1.config | cut -d" " -f2 | while read -r opt; do
     ! grep -q "^$opt=" $O/.config || echo "warning: r1.config: $opt is still enabled"
   done
+  # Test tools for the initramfs, built against tinyalsa (see Dockerfile).
+  ta=/opt/tinyalsa
+  mipsel-linux-gnu-gcc -static -Os -Wall -I$ta/include -o $O/r1tone /r1/initramfs/r1tone.c $ta/libtinyalsa.a -lm
   mk -j$(nproc) vmlinux.bin dtbs 2>&1 | grep -v -E "^\s*$" || true
   test -f $O/arch/mips/boot/vmlinux.bin
   cat $O/arch/mips/boot/vmlinux.bin $O/arch/mips/boot/dts/ingenic/hiby-r1.dtb > /r1/out/r1-linux.bin
