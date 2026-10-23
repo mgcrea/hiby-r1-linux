@@ -2,10 +2,23 @@
 /bin/busybox --install -s
 mount -t proc proc /proc
 mount -t sysfs sys /sys
+# The kernel only auto-mounts devtmpfs on a real root, not an initramfs.
+mount -t devtmpfs dev /dev
 echo
 echo "HiBy R1: Linux $(uname -r) is up"
 grep -E "system type|cpu model|BogoMIPS" /proc/cpuinfo
 free
+
+# A shell on the USB serial gadget (/dev/cu.usbmodem* on the Mac).
+( while :; do setsid getty -n -l /bin/sh 115200 ttyGS0 vt100; sleep 1; done ) &
+
+# The SD card, read-only until writes are trusted.
+for i in 1 2 3 4 5 6 7 8 9 10; do [ -b /dev/mmcblk0p1 ] && break; sleep 1; done
+if mount -t exfat -o ro /dev/mmcblk0p1 /mnt/sd; then
+	echo "SD card:"; ls /mnt/sd
+else
+	echo "SD card: not mounted"; ls /dev | grep mmc
+fi
 # A clock that ticks on screen shows the timer and interrupts work. It
 # rewrites one line so the boot log above stays readable.
 while :; do

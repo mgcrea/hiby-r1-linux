@@ -8,5 +8,8 @@ dir /sbin 0755 0 0
 dir /usr 0755 0 0
 dir /usr/bin 0755 0 0
 dir /usr/sbin 0755 0 0
+dir /mnt 0755 0 0
+dir /mnt/sd 0755 0 0
 file /bin/busybox /bin/busybox 0755 0 0
 file /init /r1/initramfs/init 0755 0 0
+file /sbin/r1-reboot /r1/initramfs/r1-reboot 0755 0 0

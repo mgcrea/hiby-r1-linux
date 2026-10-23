@@ -1,0 +1,11 @@
+#!/bin/sh
+# Reset the R1 back into the stock firmware: arm the watchdog for about a
+# second, as the stock kernel's restart handler does (see r1jump_main.c).
+sync
+devmem 0x10002004 8 0             # TCER: stop
+devmem 0x10002028 32 0x01000000   # TFCR: clear the WDT flag
+devmem 0x1000203c 32 0x00010000   # TSCR: let the WDT clock run
+devmem 0x10002000 32 0x00150020   # TDR: 32 ticks (compare in the high half)
+devmem 0x1000200c 16 0x042a       # TCSR: clear, RTC clock, /1024
+devmem 0x10002004 8 1             # TCER: start
+sleep 5
