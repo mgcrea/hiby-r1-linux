@@ -16,21 +16,18 @@ adb push "$here/out/r1-linux.bin" /tmp/r1-linux.bin >/dev/null
 adb push "$here/tools/stock-modules/r1jump/r1jump.ko" /tmp/r1jump.ko >/dev/null
 echo "[$(date +%T)] pushed; entry $entry; waiting for the screen to be on"
 
-# The display controller rereads its frame descriptor every frame, and the
-# stock kernel allocates it anywhere (it moves when r1player flips pages).
-# With r1player paused, chain it to a self-linked copy showing page 0 in
-# the last row of framebuffer page 1 (0x02776f00): memory the stock kernel
-# owns and won't hand out (r1jump once overwrote a page it thought free),
-# and which the mainline device tree reserves.
+# Stop the display controller before the jump, with r1player paused. Left
+# scanning out stock's frame through the jump, it sometimes underran while
+# r1jump copied the kernel and the new kernel started (about 1 boot in 13),
+# and an underrun halts it for good: register 0x2004 reads 0x10f and
+# nothing starts it again (docs/kernel.md, "Display"). Stopped, it is in the
+# state a cold boot leaves it in; the screen stays dark until mainline's
+# display driver starts it, about 1.5 s after the jump.
 adb shell 'while [ "$(cat /sys/class/backlight/backlight_pwm0/brightness)" = 0 ]; do usleep 200000; done
   kill -STOP $(pidof r1player) 2>/dev/null; sync
-  d=$(devmem 0x13051000 32); new=$((0x02776f00))
-  i=0; while [ $i -lt 16 ]; do devmem $((new + i * 4)) 32 $(devmem $((d + i * 4)) 32); i=$((i + 1)); done
-  devmem $new 32 $new
-  devmem $((new + 4)) 32 0x02600000
-  devmem $d 32 $new
-  usleep 50000
-  [ "$(devmem 0x13051000 32)" = 0x02776F00 ] || { echo "display did not take the new descriptor"; exit 1; }'
+  devmem 0x13052000 32 0x10
+  i=0; while [ $(( $(devmem 0x13052004 32) & 1 )) = 1 ] && [ $i -lt 20 ]; do usleep 10000; i=$((i + 1)); done
+  [ $(( $(devmem 0x13052004 32) & 1 )) = 0 ] || { echo "display did not stop: $(devmem 0x13052004 32)"; exit 1; }'
 
 echo "[$(date +%T)] jumping (watchdog $wdt s)"
 adb shell "insmod /tmp/r1jump.ko image=/tmp/r1-linux.bin load=0x80100000 entry=$entry wdt_secs=$wdt" &
