@@ -1,0 +1,615 @@
+From 786af286e2e9ff1adde21a953780332dc4106b90 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 06:35:45 +0000
+Subject: [PATCH 05/14] clk: ingenic: add the X1600 CGU driver
+
+The register layout comes from the clock tables of the vendor kernel
+running on a HiBy R1 (read from its memory), and every rate was checked
+against its clk_summary. The X1600's CDR registers match the X1830's,
+but its PLLs do not: rate = ext * M / (N * OD1 * OD0), with no offsets
+or encodings, so they get custom read-only clock ops. The CPU, L2, AHB,
+APB and DDR clocks are read-only as well. I2S, CAN, CDBUS and the
+memory power gates are left out for now.
+---
+ .../bindings/clock/ingenic,cgu.yaml           |   2 +
+ drivers/clk/ingenic/Kconfig                   |  11 +
+ drivers/clk/ingenic/Makefile                  |   1 +
+ drivers/clk/ingenic/x1600-cgu.c               | 467 ++++++++++++++++++
+ include/dt-bindings/clock/ingenic,x1600-cgu.h |  58 +++
+ 5 files changed, 539 insertions(+)
+ create mode 100644 drivers/clk/ingenic/x1600-cgu.c
+ create mode 100644 include/dt-bindings/clock/ingenic,x1600-cgu.h
+
+diff --git a/Documentation/devicetree/bindings/clock/ingenic,cgu.yaml b/Documentation/devicetree/bindings/clock/ingenic,cgu.yaml
+index 509df06..c622131 100644
+--- a/Documentation/devicetree/bindings/clock/ingenic,cgu.yaml
++++ b/Documentation/devicetree/bindings/clock/ingenic,cgu.yaml
+@@ -28,6 +28,7 @@ select:
+           - ingenic,jz4770-cgu
+           - ingenic,jz4780-cgu
+           - ingenic,x1000-cgu
++          - ingenic,x1600-cgu
+           - ingenic,x1830-cgu
+   required:
+     - compatible
+@@ -58,6 +59,7 @@ properties:
+           - ingenic,jz4770-cgu
+           - ingenic,jz4780-cgu
+           - ingenic,x1000-cgu
++          - ingenic,x1600-cgu
+           - ingenic,x1830-cgu
+       - const: simple-mfd
+     minItems: 1
+diff --git a/drivers/clk/ingenic/Kconfig b/drivers/clk/ingenic/Kconfig
+index f80ac4f..29c1839 100644
+--- a/drivers/clk/ingenic/Kconfig
++++ b/drivers/clk/ingenic/Kconfig
+@@ -75,6 +75,17 @@ config INGENIC_CGU_X1000
+ 
+ 	  If building for a X1000 SoC, you want to say Y here.
+ 
++config INGENIC_CGU_X1600
++	bool "Ingenic X1600 CGU driver"
++	default MACH_X1600
++	select INGENIC_CGU_COMMON
++	select RATIONAL
++	help
++	  Support the clocks provided by the CGU hardware on Ingenic X1600
++	  and compatible SoCs.
++
++	  If building for a X1600 SoC, you want to say Y here.
++
+ config INGENIC_CGU_X1830
+ 	bool "Ingenic X1830 CGU driver"
+ 	default MACH_X1830
+diff --git a/drivers/clk/ingenic/Makefile b/drivers/clk/ingenic/Makefile
+index 81d8e23..7e93e08 100644
+--- a/drivers/clk/ingenic/Makefile
++++ b/drivers/clk/ingenic/Makefile
+@@ -7,5 +7,6 @@ obj-$(CONFIG_INGENIC_CGU_JZ4760)	+= jz4760-cgu.o
+ obj-$(CONFIG_INGENIC_CGU_JZ4770)	+= jz4770-cgu.o
+ obj-$(CONFIG_INGENIC_CGU_JZ4780)	+= jz4780-cgu.o
+ obj-$(CONFIG_INGENIC_CGU_X1000)		+= x1000-cgu.o
++obj-$(CONFIG_INGENIC_CGU_X1600)		+= x1600-cgu.o
+ obj-$(CONFIG_INGENIC_CGU_X1830)		+= x1830-cgu.o
+ obj-$(CONFIG_INGENIC_TCU_CLK)		+= tcu.o
+diff --git a/drivers/clk/ingenic/x1600-cgu.c b/drivers/clk/ingenic/x1600-cgu.c
+new file mode 100644
+index 0000000..6c86a45
+--- /dev/null
++++ b/drivers/clk/ingenic/x1600-cgu.c
+@@ -0,0 +1,467 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * X1600 SoC CGU driver
++ *
++ * The register layout was read from the clock tables of the vendor kernel
++ * running on a HiBy R1, and every rate checked against its clk_summary.
++ * The PLLs and the CPU, L2, AHB, APB and DDR clocks are read-only: the
++ * bootloader sets them up and nothing here may change them.
++ */
++
++#include <linux/bitfield.h>
++#include <linux/clk-provider.h>
++#include <linux/io.h>
++#include <linux/of.h>
++#include <linux/rational.h>
++
++#include <dt-bindings/clock/ingenic,x1600-cgu.h>
++
++#include "cgu.h"
++
++/* CGU register offsets */
++#define CGU_REG_CPCCR		0x00
++#define CGU_REG_APLL		0x10
++#define CGU_REG_MPLL		0x14
++#define CGU_REG_EPLL		0x18
++#define CGU_REG_CLKGR0		0x20
++#define CGU_REG_OPCR		0x24
++#define CGU_REG_CLKGR1		0x28
++#define CGU_REG_DDRCDR		0x2c
++#define CGU_REG_MACCDR		0x54
++#define CGU_REG_SSICDR		0x5c
++#define CGU_REG_I2SRCDR		0x60
++#define CGU_REG_LPCDR		0x64
++#define CGU_REG_MSC0CDR		0x68
++#define CGU_REG_PWMCDR		0x6c
++#define CGU_REG_SFCCDR		0x74
++#define CGU_REG_CIMCDR		0x78
++#define CGU_REG_I2STCDR		0x7c
++#define CGU_REG_MSC1CDR		0xa4
++
++/*
++ * PLL: rate = ext * M / (N * OD1 * OD0), with M in bits 31:20, N in 19:14,
++ * OD1 in 13:11 and OD0 in 10:8, none of them offset or encoded.
++ */
++static const unsigned int x1600_pll_regs[] = {
++	[X1600_CLK_APLL] = CGU_REG_APLL,
++	[X1600_CLK_MPLL] = CGU_REG_MPLL,
++	[X1600_CLK_EPLL] = CGU_REG_EPLL,
++};
++
++static unsigned long x1600_pll_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
++{
++	struct ingenic_clk *ingenic_clk = to_ingenic_clk(hw);
++	u32 ctl = readl(ingenic_clk->cgu->base + x1600_pll_regs[ingenic_clk->idx]);
++	unsigned int m = (ctl >> 20) & 0xfff;
++	unsigned int n = (ctl >> 14) & 0x3f;
++	unsigned int od1 = (ctl >> 11) & 0x7;
++	unsigned int od0 = (ctl >> 8) & 0x7;
++
++	if (!n || !od1 || !od0)
++		return 0;
++	return div_u64((u64)parent_rate * m, n * od1 * od0);
++}
++
++static const struct clk_ops x1600_pll_ops = {
++	.recalc_rate = x1600_pll_recalc_rate,
++};
++
++/*
++ * I2S: rate = parent * M / N, with M in bits 28:20 and N in 19:0 of
++ * I2STCDR (transmit) and I2SRCDR (receive). Bit 29 enables the output.
++ */
++#define I2SCDR_EN		BIT(29)
++#define I2SCDR_M		GENMASK(28, 20)
++#define I2SCDR_N		GENMASK(19, 0)
++
++static const unsigned int x1600_i2s_regs[] = {
++	[X1600_CLK_I2S0_TX_DIV] = CGU_REG_I2STCDR,
++	[X1600_CLK_I2S0_RX_DIV] = CGU_REG_I2SRCDR,
++};
++
++static void __iomem *x1600_i2s_reg(struct clk_hw *hw)
++{
++	struct ingenic_clk *ingenic_clk = to_ingenic_clk(hw);
++
++	return ingenic_clk->cgu->base + x1600_i2s_regs[ingenic_clk->idx];
++}
++
++static void x1600_i2s_update(struct clk_hw *hw, u32 mask, u32 val)
++{
++	struct ingenic_cgu *cgu = to_ingenic_clk(hw)->cgu;
++	void __iomem *reg = x1600_i2s_reg(hw);
++	unsigned long flags;
++
++	spin_lock_irqsave(&cgu->lock, flags);
++	writel((readl(reg) & ~mask) | val, reg);
++	spin_unlock_irqrestore(&cgu->lock, flags);
++}
++
++static unsigned long x1600_i2s_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
++{
++	u32 cdr = readl(x1600_i2s_reg(hw));
++	unsigned int m = FIELD_GET(I2SCDR_M, cdr);
++	unsigned int n = FIELD_GET(I2SCDR_N, cdr);
++
++	if (!n)
++		return 0;
++	return div_u64((u64)parent_rate * m, n);
++}
++
++static void x1600_i2s_calc_m_n(unsigned long rate, unsigned long parent_rate,
++			       unsigned long *m, unsigned long *n)
++{
++	rational_best_approximation(rate, parent_rate,
++				    FIELD_MAX(I2SCDR_M), FIELD_MAX(I2SCDR_N), m, n);
++}
++
++static int x1600_i2s_determine_rate(struct clk_hw *hw, struct clk_rate_request *req)
++{
++	unsigned long m, n;
++
++	if (!req->best_parent_rate)
++		return -EINVAL;
++	req->rate = min(req->rate, req->best_parent_rate);
++	x1600_i2s_calc_m_n(req->rate, req->best_parent_rate, &m, &n);
++	if (!m)
++		return -EINVAL;
++	req->rate = div_u64((u64)req->best_parent_rate * m, n);
++	return 0;
++}
++
++static int x1600_i2s_set_rate(struct clk_hw *hw, unsigned long rate,
++			      unsigned long parent_rate)
++{
++	unsigned long m, n;
++
++	x1600_i2s_calc_m_n(rate, parent_rate, &m, &n);
++	if (!m)
++		return -EINVAL;
++	x1600_i2s_update(hw, I2SCDR_M | I2SCDR_N,
++			 FIELD_PREP(I2SCDR_M, m) | FIELD_PREP(I2SCDR_N, n));
++	return 0;
++}
++
++static int x1600_i2s_enable(struct clk_hw *hw)
++{
++	x1600_i2s_update(hw, I2SCDR_EN, I2SCDR_EN);
++	return 0;
++}
++
++static void x1600_i2s_disable(struct clk_hw *hw)
++{
++	x1600_i2s_update(hw, I2SCDR_EN, 0);
++}
++
++static int x1600_i2s_is_enabled(struct clk_hw *hw)
++{
++	return !!(readl(x1600_i2s_reg(hw)) & I2SCDR_EN);
++}
++
++static const struct clk_ops x1600_i2s_ops = {
++	.recalc_rate = x1600_i2s_recalc_rate,
++	.determine_rate = x1600_i2s_determine_rate,
++	.set_rate = x1600_i2s_set_rate,
++	.enable = x1600_i2s_enable,
++	.disable = x1600_i2s_disable,
++	.is_enabled = x1600_i2s_is_enabled,
++};
++
++/* Dividers in the CDR registers: change enable 29, busy 28, stop 27. */
++#define X1600_CDR(_reg, _div, _bits) { _reg, 0, _div, _bits, 29, 28, 27 }
++
++static const struct ingenic_cgu_clk_info x1600_cgu_clocks[] = {
++
++	/* External clocks */
++
++	[X1600_CLK_EXCLK] = { "ext", CGU_CLK_EXT },
++	[X1600_CLK_RTCLK] = { "rtc", CGU_CLK_EXT },
++
++	/* PLLs */
++
++	[X1600_CLK_APLL] = {
++		"apll", CGU_CLK_CUSTOM,
++		.parents = { X1600_CLK_EXCLK, -1, -1, -1 },
++		.custom = { &x1600_pll_ops },
++	},
++	[X1600_CLK_MPLL] = {
++		"mpll", CGU_CLK_CUSTOM,
++		.parents = { X1600_CLK_EXCLK, -1, -1, -1 },
++		.custom = { &x1600_pll_ops },
++	},
++	[X1600_CLK_EPLL] = {
++		"epll", CGU_CLK_CUSTOM,
++		.parents = { X1600_CLK_EXCLK, -1, -1, -1 },
++		.custom = { &x1600_pll_ops },
++	},
++
++	/* Muxes and dividers of the CPU and buses (CPCCR), read-only */
++
++	[X1600_CLK_SCLKA] = {
++		"sclk_a", CGU_CLK_MUX,
++		.parents = { -1, X1600_CLK_EXCLK, X1600_CLK_APLL, -1 },
++		.mux = { CGU_REG_CPCCR, 30, 2 },
++	},
++	[X1600_CLK_CPUMUX] = {
++		"cpu_mux", CGU_CLK_MUX,
++		.parents = { -1, X1600_CLK_SCLKA, X1600_CLK_MPLL, -1 },
++		.mux = { CGU_REG_CPCCR, 28, 2 },
++	},
++	[X1600_CLK_CPU] = {
++		"cpu", CGU_CLK_DIV,
++		.flags = CLK_IS_CRITICAL,
++		.parents = { X1600_CLK_CPUMUX, -1, -1, -1 },
++		.div = { CGU_REG_CPCCR, 0, 1, 4, 22, -1, -1 },
++	},
++	[X1600_CLK_L2CACHE] = {
++		"l2cache", CGU_CLK_DIV,
++		.flags = CLK_IS_CRITICAL,
++		.parents = { X1600_CLK_CPUMUX, -1, -1, -1 },
++		.div = { CGU_REG_CPCCR, 4, 1, 4, 22, -1, -1 },
++	},
++	[X1600_CLK_AHB0] = {
++		"ahb0", CGU_CLK_MUX | CGU_CLK_DIV,
++		.flags = CLK_IS_CRITICAL,
++		.parents = { -1, X1600_CLK_SCLKA, X1600_CLK_MPLL, -1 },
++		.mux = { CGU_REG_CPCCR, 26, 2 },
++		.div = { CGU_REG_CPCCR, 8, 1, 4, 21, -1, -1 },
++	},
++	[X1600_CLK_AHB2PMUX] = {
++		"ahb2_apb_mux", CGU_CLK_MUX,
++		.parents = { -1, X1600_CLK_SCLKA, X1600_CLK_MPLL, -1 },
++		.mux = { CGU_REG_CPCCR, 24, 2 },
++	},
++	[X1600_CLK_AHB2] = {
++		"ahb2", CGU_CLK_DIV,
++		.flags = CLK_IS_CRITICAL,
++		.parents = { X1600_CLK_AHB2PMUX, -1, -1, -1 },
++		.div = { CGU_REG_CPCCR, 12, 1, 4, 20, -1, -1 },
++	},
++	[X1600_CLK_PCLK] = {
++		"pclk", CGU_CLK_DIV,
++		.flags = CLK_IS_CRITICAL,
++		.parents = { X1600_CLK_AHB2PMUX, -1, -1, -1 },
++		.div = { CGU_REG_CPCCR, 16, 1, 4, 20, -1, -1 },
++	},
++	[X1600_CLK_DDR] = {
++		"ddr", CGU_CLK_MUX | CGU_CLK_DIV | CGU_CLK_GATE,
++		.flags = CLK_IS_CRITICAL,
++		.parents = { -1, X1600_CLK_SCLKA, X1600_CLK_MPLL, -1 },
++		.mux = { CGU_REG_DDRCDR, 30, 2 },
++		.div = X1600_CDR(CGU_REG_DDRCDR, 1, 4),
++		.gate = { CGU_REG_CLKGR0, 31 },
++	},
++
++	/* Peripheral clocks with their own mux, divider and gate */
++
++	[X1600_CLK_MSC0] = {
++		"msc0", CGU_CLK_MUX | CGU_CLK_DIV | CGU_CLK_GATE,
++		.parents = { X1600_CLK_SCLKA, X1600_CLK_MPLL, X1600_CLK_EPLL, -1 },
++		.mux = { CGU_REG_MSC0CDR, 30, 2 },
++		.div = X1600_CDR(CGU_REG_MSC0CDR, 2, 8),
++		.gate = { CGU_REG_CLKGR0, 4 },
++	},
++	[X1600_CLK_MSC1] = {
++		"msc1", CGU_CLK_MUX | CGU_CLK_DIV | CGU_CLK_GATE,
++		.parents = { X1600_CLK_SCLKA, X1600_CLK_MPLL, X1600_CLK_EPLL, -1 },
++		.mux = { CGU_REG_MSC1CDR, 30, 2 },
++		.div = X1600_CDR(CGU_REG_MSC1CDR, 2, 8),
++		.gate = { CGU_REG_CLKGR0, 5 },
++	},
++	[X1600_CLK_LCD] = {
++		"lcd", CGU_CLK_MUX | CGU_CLK_DIV | CGU_CLK_GATE,
++		.parents = { X1600_CLK_SCLKA, X1600_CLK_MPLL, X1600_CLK_EPLL, -1 },
++		.mux = { CGU_REG_LPCDR, 30, 2 },
++		.div = X1600_CDR(CGU_REG_LPCDR, 1, 8),
++		.gate = { CGU_REG_CLKGR0, 23 },
++	},
++	[X1600_CLK_SFC] = {
++		"sfc", CGU_CLK_MUX | CGU_CLK_DIV | CGU_CLK_GATE,
++		.parents = { X1600_CLK_SCLKA, X1600_CLK_MPLL, X1600_CLK_EPLL, -1 },
++		.mux = { CGU_REG_SFCCDR, 30, 2 },
++		.div = X1600_CDR(CGU_REG_SFCCDR, 1, 8),
++		.gate = { CGU_REG_CLKGR0, 2 },
++	},
++	[X1600_CLK_SSI] = {
++		"ssi", CGU_CLK_MUX | CGU_CLK_DIV | CGU_CLK_GATE,
++		.parents = { X1600_CLK_SCLKA, X1600_CLK_MPLL, X1600_CLK_EPLL, -1 },
++		.mux = { CGU_REG_SSICDR, 30, 2 },
++		.div = X1600_CDR(CGU_REG_SSICDR, 1, 8),
++		.gate = { CGU_REG_CLKGR0, 19 },
++	},
++	[X1600_CLK_CIM] = {
++		"cim", CGU_CLK_MUX | CGU_CLK_DIV | CGU_CLK_GATE,
++		.parents = { X1600_CLK_SCLKA, X1600_CLK_MPLL, X1600_CLK_EPLL, -1 },
++		.mux = { CGU_REG_CIMCDR, 30, 2 },
++		.div = X1600_CDR(CGU_REG_CIMCDR, 1, 8),
++		.gate = { CGU_REG_CLKGR0, 22 },
++	},
++	[X1600_CLK_MACPHY] = {
++		"mac_phy", CGU_CLK_MUX | CGU_CLK_DIV,
++		.parents = { X1600_CLK_SCLKA, X1600_CLK_MPLL, X1600_CLK_EPLL, -1 },
++		.mux = { CGU_REG_MACCDR, 30, 2 },
++		.div = X1600_CDR(CGU_REG_MACCDR, 1, 8),
++	},
++	[X1600_CLK_PWM] = {
++		"pwm", CGU_CLK_MUX | CGU_CLK_DIV | CGU_CLK_GATE,
++		.parents = { X1600_CLK_SCLKA, X1600_CLK_MPLL, X1600_CLK_EPLL, -1 },
++		.mux = { CGU_REG_PWMCDR, 30, 2 },
++		.div = X1600_CDR(CGU_REG_PWMCDR, 1, 4),
++		.gate = { CGU_REG_CLKGR1, 5 },
++	},
++
++	/* I2S transmit and receive clocks: mux, M/N divider, gate */
++
++	[X1600_CLK_I2S0_TX_MUX] = {
++		"i2s0_tx_mux", CGU_CLK_MUX,
++		.parents = { X1600_CLK_SCLKA, X1600_CLK_EPLL, -1, -1 },
++		.mux = { CGU_REG_I2STCDR, 30, 1 },
++	},
++	[X1600_CLK_I2S0_TX_DIV] = {
++		"i2s0_tx_div", CGU_CLK_CUSTOM,
++		.parents = { X1600_CLK_I2S0_TX_MUX, -1, -1, -1 },
++		.custom = { &x1600_i2s_ops },
++	},
++	[X1600_CLK_I2S0_TX] = {
++		"i2s0_tx", CGU_CLK_GATE,
++		.parents = { X1600_CLK_I2S0_TX_DIV, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR1, 9 },
++	},
++	[X1600_CLK_I2S0_RX_MUX] = {
++		"i2s0_rx_mux", CGU_CLK_MUX,
++		.parents = { X1600_CLK_SCLKA, X1600_CLK_EPLL, -1, -1 },
++		.mux = { CGU_REG_I2SRCDR, 30, 1 },
++	},
++	[X1600_CLK_I2S0_RX_DIV] = {
++		"i2s0_rx_div", CGU_CLK_CUSTOM,
++		.parents = { X1600_CLK_I2S0_RX_MUX, -1, -1, -1 },
++		.custom = { &x1600_i2s_ops },
++	},
++	[X1600_CLK_I2S0_RX] = {
++		"i2s0_rx", CGU_CLK_GATE,
++		.parents = { X1600_CLK_I2S0_RX_DIV, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR1, 8 },
++	},
++
++	/* Gate-only clocks (a set bit stops the clock) */
++
++	[X1600_CLK_NEMC] = {
++		"nemc", CGU_CLK_GATE,
++		.parents = { X1600_CLK_AHB2, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR0, 0 },
++	},
++	[X1600_CLK_EFUSE] = {
++		"efuse", CGU_CLK_GATE,
++		.parents = { X1600_CLK_AHB2, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR0, 1 },
++	},
++	[X1600_CLK_OTG] = {
++		"otg", CGU_CLK_GATE,
++		.parents = { X1600_CLK_AHB2, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR0, 3 },
++	},
++	[X1600_CLK_I2C0] = {
++		"i2c0", CGU_CLK_GATE,
++		.parents = { X1600_CLK_PCLK, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR0, 7 },
++	},
++	[X1600_CLK_I2C1] = {
++		"i2c1", CGU_CLK_GATE,
++		.parents = { X1600_CLK_PCLK, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR0, 8 },
++	},
++	[X1600_CLK_AIC] = {
++		"aic", CGU_CLK_GATE,
++		.parents = { X1600_CLK_AHB2, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR0, 11 },
++	},
++	[X1600_CLK_SADC] = {
++		"sadc", CGU_CLK_GATE,
++		.parents = { X1600_CLK_PCLK, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR0, 13 },
++	},
++	[X1600_CLK_UART0] = {
++		"uart0", CGU_CLK_GATE,
++		.parents = { X1600_CLK_PCLK, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR0, 14 },
++	},
++	[X1600_CLK_UART1] = {
++		"uart1", CGU_CLK_GATE,
++		.parents = { X1600_CLK_PCLK, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR0, 15 },
++	},
++	[X1600_CLK_UART2] = {
++		"uart2", CGU_CLK_GATE,
++		.parents = { X1600_CLK_PCLK, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR0, 16 },
++	},
++	[X1600_CLK_UART3] = {
++		"uart3", CGU_CLK_GATE,
++		.parents = { X1600_CLK_PCLK, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR1, 16 },
++	},
++	[X1600_CLK_DTRNG] = {
++		"dtrng", CGU_CLK_GATE,
++		.parents = { X1600_CLK_PCLK, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR0, 17 },
++	},
++	[X1600_CLK_TCU] = {
++		"tcu", CGU_CLK_GATE,
++		.parents = { X1600_CLK_PCLK, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR0, 18 },
++	},
++	[X1600_CLK_OST] = {
++		"ost", CGU_CLK_GATE,
++		.parents = { X1600_CLK_EXCLK, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR0, 20 },
++	},
++	[X1600_CLK_PDMA] = {
++		"pdma", CGU_CLK_GATE,
++		.parents = { X1600_CLK_AHB2, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR0, 21 },
++	},
++	[X1600_CLK_AES] = {
++		"aes", CGU_CLK_GATE,
++		.parents = { X1600_CLK_AHB2, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR0, 24 },
++	},
++	[X1600_CLK_HASH] = {
++		"hash", CGU_CLK_GATE,
++		.parents = { X1600_CLK_AHB2, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR1, 6 },
++	},
++	[X1600_CLK_INTC] = {
++		"intc", CGU_CLK_GATE,
++		.flags = CLK_IS_CRITICAL,
++		.parents = { X1600_CLK_AHB2, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR1, 26 },
++	},
++	[X1600_CLK_RTC] = {
++		"rtc_gate", CGU_CLK_GATE,
++		.parents = { X1600_CLK_RTCLK, -1, -1, -1 },
++		.gate = { CGU_REG_CLKGR0, 27 },
++	},
++	[X1600_CLK_USBPHY] = {
++		"usb_phy", CGU_CLK_GATE,
++		.parents = { X1600_CLK_PCLK, -1, -1, -1 },
++		.gate = { CGU_REG_OPCR, 23 },
++	},
++};
++
++static void __init x1600_cgu_init(struct device_node *np)
++{
++	struct ingenic_cgu *cgu;
++	int retval;
++
++	cgu = ingenic_cgu_new(x1600_cgu_clocks,
++			      ARRAY_SIZE(x1600_cgu_clocks), np);
++	if (!cgu) {
++		pr_err("%s: failed to initialise CGU\n", __func__);
++		return;
++	}
++
++	retval = ingenic_cgu_register_clocks(cgu);
++	if (retval)
++		pr_err("%s: failed to register CGU Clocks\n", __func__);
++}
++CLK_OF_DECLARE_DRIVER(x1600_cgu, "ingenic,x1600-cgu", x1600_cgu_init);
+diff --git a/include/dt-bindings/clock/ingenic,x1600-cgu.h b/include/dt-bindings/clock/ingenic,x1600-cgu.h
+new file mode 100644
+index 0000000..af7bb8c
+--- /dev/null
++++ b/include/dt-bindings/clock/ingenic,x1600-cgu.h
+@@ -0,0 +1,58 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * This header provides clock numbers for the Ingenic X1600 CGU.
++ */
++
++#ifndef __DT_BINDINGS_CLOCK_X1600_CGU_H__
++#define __DT_BINDINGS_CLOCK_X1600_CGU_H__
++
++#define X1600_CLK_EXCLK		0
++#define X1600_CLK_RTCLK		1
++#define X1600_CLK_APLL		2
++#define X1600_CLK_MPLL		3
++#define X1600_CLK_EPLL		4
++#define X1600_CLK_SCLKA		5
++#define X1600_CLK_CPUMUX	6
++#define X1600_CLK_CPU		7
++#define X1600_CLK_L2CACHE	8
++#define X1600_CLK_AHB0		9
++#define X1600_CLK_AHB2PMUX	10
++#define X1600_CLK_AHB2		11
++#define X1600_CLK_PCLK		12
++#define X1600_CLK_DDR		13
++#define X1600_CLK_MSC0		14
++#define X1600_CLK_MSC1		15
++#define X1600_CLK_LCD		16
++#define X1600_CLK_SFC		17
++#define X1600_CLK_SSI		18
++#define X1600_CLK_CIM		19
++#define X1600_CLK_MACPHY	20
++#define X1600_CLK_PWM		21
++#define X1600_CLK_NEMC		22
++#define X1600_CLK_EFUSE		23
++#define X1600_CLK_OTG		24
++#define X1600_CLK_I2C0		25
++#define X1600_CLK_I2C1		26
++#define X1600_CLK_AIC		27
++#define X1600_CLK_SADC		28
++#define X1600_CLK_UART0		29
++#define X1600_CLK_UART1		30
++#define X1600_CLK_UART2		31
++#define X1600_CLK_UART3		32
++#define X1600_CLK_DTRNG		33
++#define X1600_CLK_TCU		34
++#define X1600_CLK_OST		35
++#define X1600_CLK_PDMA		36
++#define X1600_CLK_AES		37
++#define X1600_CLK_HASH		38
++#define X1600_CLK_INTC		39
++#define X1600_CLK_RTC		40
++#define X1600_CLK_USBPHY	41
++#define X1600_CLK_I2S0_TX_MUX	42
++#define X1600_CLK_I2S0_TX_DIV	43
++#define X1600_CLK_I2S0_TX	44
++#define X1600_CLK_I2S0_RX_MUX	45
++#define X1600_CLK_I2S0_RX_DIV	46
++#define X1600_CLK_I2S0_RX	47
++
++#endif /* __DT_BINDINGS_CLOCK_X1600_CGU_H__ */
+-- 
+2.39.5
+

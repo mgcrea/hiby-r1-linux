@@ -1,7 +1,7 @@
 From 3aba013408ebe8b090e058ee87732832a432d192 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 05:57:55 +0000
-Subject: [PATCH 4/5] MIPS: ingenic: add the X1600's MSC and OTG controllers
+Subject: [PATCH 04/14] MIPS: ingenic: add the X1600's MSC and OTG controllers
 
 Describe both MSC controllers and the USB OTG controller, clocked by
 fixed stand-ins at the rates the stock firmware leaves until there is an

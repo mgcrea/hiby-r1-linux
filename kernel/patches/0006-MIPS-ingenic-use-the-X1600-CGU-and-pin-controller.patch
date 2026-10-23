@@ -1,0 +1,213 @@
+From ed381c94fdddc16e3938ae365de3701158140756 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 06:35:45 +0000
+Subject: [PATCH 06/14] MIPS: ingenic: use the X1600 CGU and pin controller
+
+Replace the fixed stand-in clocks with the CGU, describe the pin
+controller and its four GPIO ports, and mux the R1's SD card pins. The
+framebuffer holds the LCD clock so it stays on.
+---
+ arch/mips/boot/dts/ingenic/hiby-r1.dts |  14 ++++
+ arch/mips/boot/dts/ingenic/x1600.dtsi  | 108 +++++++++++++++++++------
+ 2 files changed, 98 insertions(+), 24 deletions(-)
+
+diff --git a/arch/mips/boot/dts/ingenic/hiby-r1.dts b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+index f34e749..9a08540 100644
+--- a/arch/mips/boot/dts/ingenic/hiby-r1.dts
++++ b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+@@ -44,6 +44,9 @@ framebuffer@2600000 {
+ 		height = <800>;
+ 		stride = <960>;
+ 		format = "r5g6b5";
++
++		/* Keeps the display's pixel clock on. */
++		clocks = <&cgu X1600_CLK_LCD>;
+ 	};
+ };
+ 
+@@ -51,6 +54,9 @@ framebuffer@2600000 {
+ &mmc1 {
+ 	status = "okay";
+ 
++	pinctrl-names = "default";
++	pinctrl-0 = <&pins_msc1>;
++
+ 	bus-width = <4>;
+ 	max-frequency = <50000000>;
+ 	cap-sd-highspeed;
+@@ -67,3 +73,11 @@ &otg {
+ 	 */
+ 	dr_mode = "peripheral";
+ };
++
++&pinctrl {
++	pins_msc1: msc1 {
++		function = "mmc1";
++		groups = "mmc1-1bit", "mmc1-4bit";
++		bias-disable;
++	};
++};
+diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
+index 5a72270..0505340 100644
+--- a/arch/mips/boot/dts/ingenic/x1600.dtsi
++++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
+@@ -1,11 +1,12 @@
+ // SPDX-License-Identifier: GPL-2.0
+ /*
+- * Ingenic X1600. Only what boots to a console with the clocks, display and
+- * DRAM left as the bootloader and the stock kernel configured them: there is
+- * no X1600 clock driver yet, so everything clocked comes from fixed clocks.
+- * Addresses and interrupts match the vendor 4.4 kernel's device tree.
++ * Ingenic X1600. The display and DRAM stay as the bootloader and the stock
++ * kernel configured them. Addresses and interrupts match the vendor 4.4
++ * kernel's device tree.
+  */
+ 
++#include <dt-bindings/clock/ingenic,x1600-cgu.h>
++
+ / {
+ 	#address-cells = <1>;
+ 	#size-cells = <1>;
+@@ -47,27 +48,87 @@ exclk: ext {
+ 		clock-frequency = <24000000>;
+ 	};
+ 
+-	/*
+-	 * Stand-ins for CGU outputs, at the rates the stock firmware leaves
+-	 * them (read from its clk_summary): the gates are already open, and
+-	 * nothing here may change a rate.
+-	 */
+-	otg_clk: otg-clock {
++	rtclk: rtc {
+ 		compatible = "fixed-clock";
+ 		#clock-cells = <0>;
+-		clock-frequency = <280000000>;
++		clock-frequency = <32768>;
+ 	};
+ 
+-	msc0_clk: msc0-clock {
+-		compatible = "fixed-clock";
+-		#clock-cells = <0>;
+-		clock-frequency = <50000000>;
++	cgu: clock-controller@10000000 {
++		compatible = "ingenic,x1600-cgu";
++		reg = <0x10000000 0x100>;
++
++		#clock-cells = <1>;
++
++		clocks = <&exclk>, <&rtclk>;
++		clock-names = "ext", "rtc";
+ 	};
+ 
+-	msc1_clk: msc1-clock {
+-		compatible = "fixed-clock";
+-		#clock-cells = <0>;
+-		clock-frequency = <50000000>;
++	pinctrl: pin-controller@10010000 {
++		compatible = "ingenic,x1600-pinctrl";
++		reg = <0x10010000 0x800>;
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		gpa: gpio@0 {
++			compatible = "ingenic,x1600-gpio";
++			reg = <0>;
++
++			gpio-controller;
++			gpio-ranges = <&pinctrl 0 0 32>;
++			#gpio-cells = <2>;
++
++			interrupt-controller;
++			#interrupt-cells = <2>;
++
++			interrupt-parent = <&intc>;
++			interrupts = <17>;
++		};
++
++		gpb: gpio@1 {
++			compatible = "ingenic,x1600-gpio";
++			reg = <1>;
++
++			gpio-controller;
++			gpio-ranges = <&pinctrl 0 32 32>;
++			#gpio-cells = <2>;
++
++			interrupt-controller;
++			#interrupt-cells = <2>;
++
++			interrupt-parent = <&intc>;
++			interrupts = <16>;
++		};
++
++		gpc: gpio@2 {
++			compatible = "ingenic,x1600-gpio";
++			reg = <2>;
++
++			gpio-controller;
++			gpio-ranges = <&pinctrl 0 64 32>;
++			#gpio-cells = <2>;
++
++			interrupt-controller;
++			#interrupt-cells = <2>;
++
++			interrupt-parent = <&intc>;
++			interrupts = <15>;
++		};
++
++		gpd: gpio@3 {
++			compatible = "ingenic,x1600-gpio";
++			reg = <3>;
++
++			gpio-controller;
++			gpio-ranges = <&pinctrl 0 96 32>;
++			#gpio-cells = <2>;
++
++			interrupt-controller;
++			#interrupt-cells = <2>;
++
++			interrupt-parent = <&intc>;
++			interrupts = <14>;
++		};
+ 	};
+ 
+ 	ost: timer@12000000 {
+@@ -76,8 +137,7 @@ ost: timer@12000000 {
+ 
+ 		#clock-cells = <1>;
+ 
+-		/* Stands in for the CGU's OST gate, which the SPL left on. */
+-		clocks = <&exclk>;
++		clocks = <&cgu X1600_CLK_OST>;
+ 		clock-names = "ost";
+ 
+ 		/* CPU interrupt 4 on the X1600, 3 on the X1000. */
+@@ -92,7 +152,7 @@ mmc0: mmc@13450000 {
+ 		interrupt-parent = <&intc>;
+ 		interrupts = <37>;
+ 
+-		clocks = <&msc0_clk>;
++		clocks = <&cgu X1600_CLK_MSC0>;
+ 		clock-names = "mmc";
+ 
+ 		status = "disabled";
+@@ -105,7 +165,7 @@ mmc1: mmc@13460000 {
+ 		interrupt-parent = <&intc>;
+ 		interrupts = <36>;
+ 
+-		clocks = <&msc1_clk>;
++		clocks = <&cgu X1600_CLK_MSC1>;
+ 		clock-names = "mmc";
+ 
+ 		status = "disabled";
+@@ -118,7 +178,7 @@ otg: usb@13500000 {
+ 		interrupt-parent = <&intc>;
+ 		interrupts = <1>;
+ 
+-		clocks = <&otg_clk>;
++		clocks = <&cgu X1600_CLK_OTG>;
+ 		clock-names = "otg";
+ 
+ 		/* FIFO sizes from the vendor device tree. */
+-- 
+2.39.5
+
