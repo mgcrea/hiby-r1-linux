@@ -1,7 +1,7 @@
-From 300e85c26068a42f7004011b79e09f7c62456e2e Mon Sep 17 00:00:00 2001
+From 5d91f8b5b27f2792e52a3aa7e0e2992e1f316e49 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:59:44 +0000
-Subject: [PATCH 19/35] regulator: axp20x: add the AXP2101
+Subject: [PATCH 19/40] regulator: axp20x: add the AXP2101
 
 DCDC1 (1.5-3.4 V), DCDC2-4 (0.5-1.2 V by 10 mV, then 20 mV steps, DCDC3
 up to 3.4 V by 100 mV), DCDC5 (1.4-3.7 V and 1.2 V), ALDO1-4 and BLDO1-2

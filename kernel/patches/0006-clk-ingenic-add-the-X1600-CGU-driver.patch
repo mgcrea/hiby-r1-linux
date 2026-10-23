@@ -1,7 +1,7 @@
-From 5d5d683da518cd41c37b38b41d2280c7013d7ff7 Mon Sep 17 00:00:00 2001
+From 94cd6a6ee46ec314f38b43afaaa32183949bf905 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 06:35:45 +0000
-Subject: [PATCH 06/35] clk: ingenic: add the X1600 CGU driver
+Subject: [PATCH 06/40] clk: ingenic: add the X1600 CGU driver
 
 The register layout comes from the clock tables of the vendor kernel
 running on a HiBy R1 (read from its memory), and every rate was checked
@@ -14,9 +14,9 @@ memory power gates are left out for now.
  .../bindings/clock/ingenic,cgu.yaml           |   2 +
  drivers/clk/ingenic/Kconfig                   |  11 +
  drivers/clk/ingenic/Makefile                  |   1 +
- drivers/clk/ingenic/x1600-cgu.c               | 467 ++++++++++++++++++
- include/dt-bindings/clock/ingenic,x1600-cgu.h |  58 +++
- 5 files changed, 539 insertions(+)
+ drivers/clk/ingenic/x1600-cgu.c               | 486 ++++++++++++++++++
+ include/dt-bindings/clock/ingenic,x1600-cgu.h |  60 +++
+ 5 files changed, 560 insertions(+)
  create mode 100644 drivers/clk/ingenic/x1600-cgu.c
  create mode 100644 include/dt-bindings/clock/ingenic,x1600-cgu.h
 
@@ -75,10 +75,10 @@ index 81d8e23..7e93e08 100644
  obj-$(CONFIG_INGENIC_TCU_CLK)		+= tcu.o
 diff --git a/drivers/clk/ingenic/x1600-cgu.c b/drivers/clk/ingenic/x1600-cgu.c
 new file mode 100644
-index 0000000..6c86a45
+index 0000000..40d45d3
 --- /dev/null
 +++ b/drivers/clk/ingenic/x1600-cgu.c
-@@ -0,0 +1,467 @@
+@@ -0,0 +1,486 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * X1600 SoC CGU driver
@@ -256,7 +256,26 @@ index 0000000..6c86a45
 +	/* External clocks */
 +
 +	[X1600_CLK_EXCLK] = { "ext", CGU_CLK_EXT },
-+	[X1600_CLK_RTCLK] = { "rtc", CGU_CLK_EXT },
++	[X1600_CLK_OSC32K] = { "osc32k", CGU_CLK_EXT },
++
++	[X1600_CLK_EXT512] = {
++		"ext/512", CGU_CLK_FIXDIV,
++		.parents = { X1600_CLK_EXCLK, -1, -1, -1 },
++		.fixdiv = { 512 },
++	},
++
++	/*
++	 * The RTC clock of the TCU and its watchdog: EXCLK / 512 unless OPCR bit
++	 * 2 is set (the vendor kernel's mux_wdt, left at 0).
++	 *
++	 * The CGU registers clocks in ID order and finds a clock's parents among
++	 * those already registered, so both parents have lower IDs.
++	 */
++	[X1600_CLK_RTCLK] = {
++		"rtc", CGU_CLK_MUX,
++		.parents = { X1600_CLK_EXT512, X1600_CLK_OSC32K, -1, -1 },
++		.mux = { CGU_REG_OPCR, 2, 1 },
++	},
 +
 +	/* PLLs */
 +
@@ -519,7 +538,7 @@ index 0000000..6c86a45
 +	},
 +	[X1600_CLK_RTC] = {
 +		"rtc_gate", CGU_CLK_GATE,
-+		.parents = { X1600_CLK_RTCLK, -1, -1, -1 },
++		.parents = { X1600_CLK_OSC32K, -1, -1, -1 },
 +		.gate = { CGU_REG_CLKGR0, 27 },
 +	},
 +	[X1600_CLK_USBPHY] = {
@@ -548,10 +567,10 @@ index 0000000..6c86a45
 +CLK_OF_DECLARE_DRIVER(x1600_cgu, "ingenic,x1600-cgu", x1600_cgu_init);
 diff --git a/include/dt-bindings/clock/ingenic,x1600-cgu.h b/include/dt-bindings/clock/ingenic,x1600-cgu.h
 new file mode 100644
-index 0000000..af7bb8c
+index 0000000..3713e9d
 --- /dev/null
 +++ b/include/dt-bindings/clock/ingenic,x1600-cgu.h
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,60 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * This header provides clock numbers for the Ingenic X1600 CGU.
@@ -561,7 +580,7 @@ index 0000000..af7bb8c
 +#define __DT_BINDINGS_CLOCK_X1600_CGU_H__
 +
 +#define X1600_CLK_EXCLK		0
-+#define X1600_CLK_RTCLK		1
++#define X1600_CLK_OSC32K	1
 +#define X1600_CLK_APLL		2
 +#define X1600_CLK_MPLL		3
 +#define X1600_CLK_EPLL		4
@@ -608,6 +627,8 @@ index 0000000..af7bb8c
 +#define X1600_CLK_I2S0_RX_MUX	45
 +#define X1600_CLK_I2S0_RX_DIV	46
 +#define X1600_CLK_I2S0_RX	47
++#define X1600_CLK_EXT512	48
++#define X1600_CLK_RTCLK		49
 +
 +#endif /* __DT_BINDINGS_CLOCK_X1600_CGU_H__ */
 -- 

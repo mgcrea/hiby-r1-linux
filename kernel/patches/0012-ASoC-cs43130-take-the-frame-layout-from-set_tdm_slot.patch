@@ -1,7 +1,7 @@
-From 8cc61a18847033ce5d64d7440b5f38390fe00d4e Mon Sep 17 00:00:00 2001
+From a0198e79c956b683ec9cb1251acb60ea1e7ac37a Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:29:14 +0000
-Subject: [PATCH 12/35] ASoC: cs43130: take the frame layout from set_tdm_slot
+Subject: [PATCH 12/40] ASoC: cs43130: take the frame layout from set_tdm_slot
 
 The driver works out the slot width from the frequency passed to the
 DAI's set_sysclk(), which it takes for SCLK. Generic cards pass MCLK
@@ -10,14 +10,15 @@ HiBy R1 (X1600 I2S master, 64 SCLK per frame) gets 256-bit slots and the
 CS43131 plays noise.
 
 Add set_tdm_slot() so a card can set the slot width, two slots of 16 to
-32 bits, and use it over the derived width when it is set.
+32 bits, and use it over the derived width when it is set. The masks must
+be 0x3: the codec always plays left in the first slot and right in the second.
 ---
- sound/soc/codecs/cs43130.c | 50 ++++++++++++++++++++++++++++++--------
+ sound/soc/codecs/cs43130.c | 54 +++++++++++++++++++++++++++++++-------
  sound/soc/codecs/cs43130.h |  1 +
- 2 files changed, 41 insertions(+), 10 deletions(-)
+ 2 files changed, 45 insertions(+), 10 deletions(-)
 
 diff --git a/sound/soc/codecs/cs43130.c b/sound/soc/codecs/cs43130.c
-index 48d88da..8450794 100644
+index 48d88da..b9d99fa 100644
 --- a/sound/soc/codecs/cs43130.c
 +++ b/sound/soc/codecs/cs43130.c
 @@ -952,18 +952,24 @@ static int cs43130_hw_params(struct snd_pcm_substream *substream,
@@ -55,15 +56,17 @@ index 48d88da..8450794 100644
  	if (bitwidth_sclk < bitwidth_dai) {
  		dev_err(cs43130->dev, "Format not supported: SCLK freq is too low\n");
  		return -EINVAL;
-@@ -1609,12 +1615,36 @@ static int cs43130_set_sysclk(struct snd_soc_dai *codec_dai,
+@@ -1609,12 +1615,40 @@ static int cs43130_set_sysclk(struct snd_soc_dai *codec_dai,
  	return 0;
  }
  
 +/*
 + * Sets the frame layout directly: two slots of slot_width bits, which then
 + * takes precedence over the layout derived from the set_sysclk() frequency.
-+ * Generic sound cards pass MCLK to set_sysclk(), not SCLK. Zero slots go
-+ * back to the derived layout.
++ * Generic sound cards pass MCLK to set_sysclk(), not SCLK. The codec always
++ * plays the left channel in the first slot and the right one in the second,
++ * so no other slot assignment is accepted. Zero slots go back to the derived
++ * layout.
 + */
 +static int cs43130_set_tdm_slot(struct snd_soc_dai *dai, unsigned int tx_mask,
 +				unsigned int rx_mask, int slots, int slot_width)
@@ -76,6 +79,8 @@ index 48d88da..8450794 100644
 +		return 0;
 +	}
 +	if (slots != 2 || slot_width < 16 || slot_width > 32)
++		return -EINVAL;
++	if (tx_mask != 0x3 || (rx_mask != 0x3 && rx_mask))
 +		return -EINVAL;
 +
 +	cs43130->dais[dai->id].slot_width = slot_width;

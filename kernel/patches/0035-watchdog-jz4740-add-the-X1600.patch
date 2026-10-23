@@ -1,0 +1,77 @@
+From 43520e5423703f912c2c5f22e8d554bf9267d0e5 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 12:24:01 +0000
+Subject: [PATCH 35/40] watchdog: jz4740: add the X1600
+
+The X1600 watchdog counter ignores writes to TCNT: writing 0 there, as the
+driver pings, leaves it counting, and the SoC resets. Setting bit 10 of TCSR
+zeroes it, as the vendor kernel does. Verified on a HiBy R1: armed for 640
+ticks, the watchdog reset the SoC after about 16 s when pinged through TCNT
+and kept it running past 45 s when pinged through TCSR.
+---
+ drivers/watchdog/jz4740_wdt.c | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/watchdog/jz4740_wdt.c b/drivers/watchdog/jz4740_wdt.c
+index 395bde7..ea3cc26 100644
+--- a/drivers/watchdog/jz4740_wdt.c
++++ b/drivers/watchdog/jz4740_wdt.c
+@@ -23,6 +23,9 @@
+ #define DEFAULT_HEARTBEAT 5
+ #define MAX_HEARTBEAT     2048
+ 
++/* X1600: zeroes the counter, which ignores writes to TCNT. */
++#define TCU_WDT_TCSR_CLEAR	BIT(10)
++
+ static bool nowayout = WATCHDOG_NOWAYOUT;
+ module_param(nowayout, bool, 0);
+ MODULE_PARM_DESC(nowayout,
+@@ -41,13 +44,18 @@ struct jz4740_wdt_drvdata {
+ 	struct regmap *map;
+ 	struct clk *clk;
+ 	unsigned long clk_rate;
++	bool clear_in_tcsr;
+ };
+ 
+ static int jz4740_wdt_ping(struct watchdog_device *wdt_dev)
+ {
+ 	struct jz4740_wdt_drvdata *drvdata = watchdog_get_drvdata(wdt_dev);
+ 
+-	regmap_write(drvdata->map, TCU_REG_WDT_TCNT, 0);
++	if (drvdata->clear_in_tcsr)
++		regmap_write_bits(drvdata->map, TCU_REG_WDT_TCSR,
++				  TCU_WDT_TCSR_CLEAR, TCU_WDT_TCSR_CLEAR);
++	else
++		regmap_write(drvdata->map, TCU_REG_WDT_TCNT, 0);
+ 
+ 	return 0;
+ }
+@@ -63,7 +71,7 @@ static int jz4740_wdt_set_timeout(struct watchdog_device *wdt_dev,
+ 	regmap_write(drvdata->map, TCU_REG_WDT_TCER, 0);
+ 
+ 	regmap_write(drvdata->map, TCU_REG_WDT_TDR, timeout_value);
+-	regmap_write(drvdata->map, TCU_REG_WDT_TCNT, 0);
++	jz4740_wdt_ping(wdt_dev);
+ 
+ 	if (tcer & TCU_WDT_TCER_TCEN)
+ 		regmap_write(drvdata->map, TCU_REG_WDT_TCER, TCU_WDT_TCER_TCEN);
+@@ -129,6 +137,7 @@ static const struct watchdog_ops jz4740_wdt_ops = {
+ static const struct of_device_id jz4740_wdt_of_matches[] = {
+ 	{ .compatible = "ingenic,jz4740-watchdog", },
+ 	{ .compatible = "ingenic,jz4780-watchdog", },
++	{ .compatible = "ingenic,x1600-watchdog", .data = (void *)true },
+ 	{ /* sentinel */ }
+ };
+ MODULE_DEVICE_TABLE(of, jz4740_wdt_of_matches);
+@@ -175,6 +184,8 @@ static int jz4740_wdt_probe(struct platform_device *pdev)
+ 	watchdog_set_nowayout(jz4740_wdt, nowayout);
+ 	watchdog_set_drvdata(jz4740_wdt, drvdata);
+ 
++	drvdata->clear_in_tcsr = (bool)device_get_match_data(dev);
++
+ 	drvdata->map = device_node_to_regmap(dev->parent->of_node);
+ 	if (IS_ERR(drvdata->map)) {
+ 		dev_err(dev, "regmap not found\n");
+-- 
+2.39.5
+

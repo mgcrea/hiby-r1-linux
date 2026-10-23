@@ -1,7 +1,7 @@
-From d132a8579b190a7847540d43605a01d1ac4ec3e6 Mon Sep 17 00:00:00 2001
+From 15b5390a8eda46f58dd49ff5b2b1f2496e52e43e Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 11:34:38 +0000
-Subject: [PATCH 34/35] ASoC: cs43130: drop only the clock reference hw_params
+Subject: [PATCH 34/40] ASoC: cs43130: drop only the clock reference hw_params
  took
 
 hw_params() takes a reference on the internal MCLK and hw_free() drops one,
@@ -21,7 +21,7 @@ takes a second reference either.
  2 files changed, 17 insertions(+)
 
 diff --git a/sound/soc/codecs/cs43130.c b/sound/soc/codecs/cs43130.c
-index 968e893..df19cce 100644
+index 257757b..d7e2014 100644
 --- a/sound/soc/codecs/cs43130.c
 +++ b/sound/soc/codecs/cs43130.c
 @@ -820,6 +820,9 @@ static int cs43130_dsd_hw_params(struct snd_pcm_substream *substream,

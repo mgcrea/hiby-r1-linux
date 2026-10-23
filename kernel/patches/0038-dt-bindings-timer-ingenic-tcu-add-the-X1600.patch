@@ -1,0 +1,45 @@
+From f60b3fbadf77da297943e3119181bc0da58780b8 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 12:24:45 +0000
+Subject: [PATCH 38/40] dt-bindings: timer: ingenic,tcu: add the X1600
+
+The X1600 TCU is the X1000's, but its watchdog is zeroed through TCSR rather
+than TCNT, so it gets a compatible of its own.
+---
+ Documentation/devicetree/bindings/timer/ingenic,tcu.yaml | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/timer/ingenic,tcu.yaml b/Documentation/devicetree/bindings/timer/ingenic,tcu.yaml
+index 585b5f5..4e26da2 100644
+--- a/Documentation/devicetree/bindings/timer/ingenic,tcu.yaml
++++ b/Documentation/devicetree/bindings/timer/ingenic,tcu.yaml
+@@ -25,6 +25,7 @@ select:
+           - ingenic,jz4770-tcu
+           - ingenic,jz4780-tcu
+           - ingenic,x1000-tcu
++          - ingenic,x1600-tcu
+   required:
+     - compatible
+ 
+@@ -64,6 +65,10 @@ properties:
+               - ingenic,jz4760b-tcu
+           - const: ingenic,jz4760-tcu
+           - const: simple-mfd
++      - items:
++          - const: ingenic,x1600-tcu
++          - const: ingenic,x1000-tcu
++          - const: simple-mfd
+ 
+   reg:
+     maxItems: 1
+@@ -122,6 +127,7 @@ patternProperties:
+           - enum:
+               - ingenic,jz4740-watchdog
+               - ingenic,jz4780-watchdog
++              - ingenic,x1600-watchdog
+           - items:
+               - enum:
+                   - ingenic,jz4770-watchdog
+-- 
+2.39.5
+

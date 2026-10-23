@@ -1,0 +1,53 @@
+From c9377fdb11d8418bbe5dfe2ca4bf3024c9cb4b52 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 12:50:03 +0000
+Subject: [PATCH 36/40] clk: ingenic: tcu: keep the divider of a running
+ watchdog
+
+Registering the TCU clocks resets each channel's TCSR to its default
+parent with no divider, the watchdog's included. A boot loader that
+leaves the watchdog running, counting the RTC clock divided by 1024, then
+sees it count up to 1024 times faster: on the HiBy R1 (X1600), armed for
+120 s, it reset the system about 80 ms later, long before the watchdog
+driver could take it over.
+
+Leave the watchdog's TCSR alone when the watchdog is enabled.
+---
+ drivers/clk/ingenic/tcu.c | 17 ++++++++++++++++-
+ 1 file changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/clk/ingenic/tcu.c b/drivers/clk/ingenic/tcu.c
+index 6784462..581f861 100644
+--- a/drivers/clk/ingenic/tcu.c
++++ b/drivers/clk/ingenic/tcu.c
+@@ -282,11 +282,26 @@ static int __init ingenic_tcu_register_clock(struct ingenic_tcu *tcu,
+ 	tcu_clk->info = info;
+ 	tcu_clk->tcu = tcu;
+ 
+-	/* Reset channel and clock divider, set default parent */
++	/*
++	 * Reset channel and clock divider, set default parent. Leave a
++	 * watchdog the boot loader left running alone: with its divider reset
++	 * it would count up to 1024 times faster and reset the system before
++	 * its driver takes it over.
++	 */
++	if (idx == TCU_CLK_WDT) {
++		unsigned int tcer;
++
++		regmap_read(tcu->map, TCU_REG_WDT_TCER, &tcer);
++		if (tcer & TCU_WDT_TCER_TCEN)
++			goto out_register;
++	}
++
+ 	ingenic_tcu_enable_regs(&tcu_clk->hw);
+ 	regmap_update_bits(tcu->map, info->tcsr_reg, 0xffff, BIT(parent));
+ 	ingenic_tcu_disable_regs(&tcu_clk->hw);
+ 
++out_register:
++
+ 	err = clk_hw_register(NULL, &tcu_clk->hw);
+ 	if (err) {
+ 		kfree(tcu_clk);
+-- 
+2.39.5
+

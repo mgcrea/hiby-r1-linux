@@ -1,7 +1,7 @@
-From a0ae7cfd803e30d0bed2767536211a6c28bb3bd2 Mon Sep 17 00:00:00 2001
+From 406656f5d92c50a88b0642a8d855525ec2cb649c Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:00:55 +0000
-Subject: [PATCH 26/35] drm/ingenic: add a driver for the X1600 LCD controller
+Subject: [PATCH 26/40] drm/ingenic: add a driver for the X1600 LCD controller
 
 The X1600 LCD controller has none of the registers ingenic-drm programs: it
 fetches each frame through a descriptor whose address it takes from FRM_DESC,

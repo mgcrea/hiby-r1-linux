@@ -1,0 +1,61 @@
+From 3c962a9f09c1da9aea85a9d45823e8eb035aea64 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 12:24:46 +0000
+Subject: [PATCH 39/40] MIPS: ingenic: add the X1600 TCU and watchdog
+
+The watchdog counts the TCU's RTC input, which on the X1600 is EXCLK / 512
+(46875 Hz), not the RTC crystal.
+---
+ arch/mips/boot/dts/ingenic/x1600.dtsi | 29 +++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
+index 712cc23..74c163c 100644
+--- a/arch/mips/boot/dts/ingenic/x1600.dtsi
++++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
+@@ -5,6 +5,7 @@
+  * kernel's device tree.
+  */
+ 
++#include <dt-bindings/clock/ingenic,tcu.h>
+ #include <dt-bindings/clock/ingenic,x1600-cgu.h>
+ 
+ / {
+@@ -208,6 +209,34 @@ ost: timer@12000000 {
+ 		interrupts = <4>;
+ 	};
+ 
++	tcu: timer@10002000 {
++		compatible = "ingenic,x1600-tcu", "ingenic,x1000-tcu", "simple-mfd";
++		reg = <0x10002000 0x1000>;
++		#address-cells = <1>;
++		#size-cells = <1>;
++		ranges = <0x0 0x10002000 0x1000>;
++
++		#clock-cells = <1>;
++
++		clocks = <&cgu X1600_CLK_RTCLK>, <&exclk>,
++			 <&cgu X1600_CLK_PCLK>, <&cgu X1600_CLK_TCU>;
++		clock-names = "rtc", "ext", "pclk", "tcu";
++
++		interrupt-controller;
++		#interrupt-cells = <1>;
++
++		interrupt-parent = <&intc>;
++		interrupts = <27 26>;
++
++		wdt: watchdog@0 {
++			compatible = "ingenic,x1600-watchdog";
++			reg = <0x0 0x10>;
++
++			clocks = <&tcu TCU_CLK_WDT>;
++			clock-names = "wdt";
++		};
++	};
++
+ 	lcd: lcd-controller@13050000 {
+ 		compatible = "ingenic,x1600-lcd";
+ 		reg = <0x13050000 0x10000>;
+-- 
+2.39.5
+

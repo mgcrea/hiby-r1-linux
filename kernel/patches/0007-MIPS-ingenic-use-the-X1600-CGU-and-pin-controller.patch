@@ -1,7 +1,7 @@
-From 864af582896c70211fdb65c1e95d1d46e0e7a86e Mon Sep 17 00:00:00 2001
+From 9c0f1cfb86137e03aedd93973cc3b8c98c4744d7 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 06:35:45 +0000
-Subject: [PATCH 07/35] MIPS: ingenic: use the X1600 CGU and pin controller
+Subject: [PATCH 07/40] MIPS: ingenic: use the X1600 CGU and pin controller
 
 Replace the fixed stand-in clocks with the CGU, describe the pin
 controller and its four GPIO ports, and mux the R1's SD card pins. The
@@ -48,7 +48,7 @@ index de7b8a3..9105287 100644
 +	};
 +};
 diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
-index 5a72270..0505340 100644
+index 5a72270..5fba353 100644
 --- a/arch/mips/boot/dts/ingenic/x1600.dtsi
 +++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
 @@ -1,11 +1,12 @@
@@ -78,7 +78,7 @@ index 5a72270..0505340 100644
 -	 * nothing here may change a rate.
 -	 */
 -	otg_clk: otg-clock {
-+	rtclk: rtc {
++	osc32k: osc32k {
  		compatible = "fixed-clock";
  		#clock-cells = <0>;
 -		clock-frequency = <280000000>;
@@ -95,8 +95,8 @@ index 5a72270..0505340 100644
 +
 +		#clock-cells = <1>;
 +
-+		clocks = <&exclk>, <&rtclk>;
-+		clock-names = "ext", "rtc";
++		clocks = <&exclk>, <&osc32k>;
++		clock-names = "ext", "osc32k";
  	};
  
 -	msc1_clk: msc1-clock {

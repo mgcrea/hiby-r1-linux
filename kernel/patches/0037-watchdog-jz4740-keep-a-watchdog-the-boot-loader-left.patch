@@ -1,0 +1,49 @@
+From 3324ca88cfd1316b9fdfd0a309f791b3cda2f607 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 12:24:01 +0000
+Subject: [PATCH 37/40] watchdog: jz4740: keep a watchdog the boot loader left
+ running
+
+A boot loader may hand over with the watchdog enabled, and the driver then
+leaves it as it was until userspace opens the device, which can be too late:
+the SoC resets with whatever timeout the boot loader chose. Reprogram it with
+the driver's timeout at probe and set WDOG_HW_RUNNING, so that the watchdog
+core feeds it in the meantime.
+---
+ drivers/watchdog/jz4740_wdt.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/drivers/watchdog/jz4740_wdt.c b/drivers/watchdog/jz4740_wdt.c
+index ea3cc26..86470e2 100644
+--- a/drivers/watchdog/jz4740_wdt.c
++++ b/drivers/watchdog/jz4740_wdt.c
+@@ -148,6 +148,7 @@ static int jz4740_wdt_probe(struct platform_device *pdev)
+ 	struct device *dev = &pdev->dev;
+ 	struct jz4740_wdt_drvdata *drvdata;
+ 	struct watchdog_device *jz4740_wdt;
++	unsigned int tcer;
+ 	long rate;
+ 	int ret;
+ 
+@@ -192,6 +193,18 @@ static int jz4740_wdt_probe(struct platform_device *pdev)
+ 		return PTR_ERR(drvdata->map);
+ 	}
+ 
++	/*
++	 * Left running by the boot loader: take it over with our timeout and
++	 * let the watchdog core keep it fed until userspace opens it.
++	 */
++	regmap_read(drvdata->map, TCU_REG_WDT_TCER, &tcer);
++	if (tcer & TCU_WDT_TCER_TCEN) {
++		ret = jz4740_wdt_start(jz4740_wdt);
++		if (ret)
++			return ret;
++		set_bit(WDOG_HW_RUNNING, &jz4740_wdt->status);
++	}
++
+ 	return devm_watchdog_register_device(dev, &drvdata->wdt);
+ }
+ 
+-- 
+2.39.5
+

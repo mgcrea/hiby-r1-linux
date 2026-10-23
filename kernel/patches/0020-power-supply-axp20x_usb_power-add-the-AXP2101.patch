@@ -1,7 +1,7 @@
-From 6b25034c71c8380199f28b9037faaa0ec206d0cb Mon Sep 17 00:00:00 2001
+From 43e136b714bfa0b763c66725fe3be4f8ebfaefac Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 08:09:21 +0000
-Subject: [PATCH 20/35] power: supply: axp20x_usb_power: add the AXP2101
+Subject: [PATCH 20/40] power: supply: axp20x_usb_power: add the AXP2101
 
 Report whether VBUS is present (bit 5 of the first status register) and
 the input current limit (100 mA to 2 A, in IIN_LIM), and update on the
