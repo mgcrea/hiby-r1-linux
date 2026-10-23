@@ -1,7 +1,7 @@
-From 6ebf3177edec056497dcaaffcea0e61f2fc64499 Mon Sep 17 00:00:00 2001
+From ee4e055e2878d5822326295df11bd5997ae51f9d Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 08:59:28 +0000
-Subject: [PATCH 25/33] dt-bindings: display: add the Ingenic X1600 LCD
+Subject: [PATCH 25/35] dt-bindings: display: add the Ingenic X1600 LCD
  controller
 
 The X1600 LCD controller fetches frames through descriptors and keeps its

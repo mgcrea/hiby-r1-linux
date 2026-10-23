@@ -1,0 +1,52 @@
+From 1ad34495e55ef3dd95b60e01204975398448872a Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 11:18:15 +0000
+Subject: [PATCH 33/35] ASoC: cs43130: mute the PCM path from hw_free to
+ prepare
+
+The PCM path is unmuted when DAPM powers it up and muted again only when
+DAPM powers it down, pmdown_time after the stream closes. Meanwhile the DAC
+plays whatever its serial port carries: on the HiBy R1 (CS43131 on an Ingenic
+AIC), loud white noise once a stream stops. Add a mute_stream op, so that
+ASoC mutes the path at hw_free() and unmutes it at prepare().
+---
+ sound/soc/codecs/cs43130.c | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/sound/soc/codecs/cs43130.c b/sound/soc/codecs/cs43130.c
+index 8450794..968e893 100644
+--- a/sound/soc/codecs/cs43130.c
++++ b/sound/soc/codecs/cs43130.c
+@@ -1615,6 +1615,20 @@ static int cs43130_set_sysclk(struct snd_soc_dai *codec_dai,
+ 	return 0;
+ }
+ 
++/*
++ * Mutes the PCM path from hw_free() to the next prepare(). Otherwise it stays
++ * unmuted until DAPM powers it down, pmdown_time after the stream closes, and
++ * plays what the serial port carries meanwhile: white noise on the HiBy R1.
++ */
++static int cs43130_mute_stream(struct snd_soc_dai *dai, int mute, int stream)
++{
++	struct snd_soc_component *component = dai->component;
++	struct cs43130_private *cs43130 = snd_soc_component_get_drvdata(component);
++
++	return regmap_update_bits(cs43130->regmap, CS43130_PCM_PATH_CTL_1,
++				  CS43130_MUTE_MASK, mute ? CS43130_MUTE_EN : 0);
++}
++
+ /*
+  * Sets the frame layout directly: two slots of slot_width bits, which then
+  * takes precedence over the layout derived from the set_sysclk() frequency.
+@@ -1645,6 +1659,8 @@ static const struct snd_soc_dai_ops cs43130_pcm_ops = {
+ 	.set_sysclk	= cs43130_set_sysclk,
+ 	.set_fmt	= cs43130_pcm_set_fmt,
+ 	.set_tdm_slot	= cs43130_set_tdm_slot,
++	.mute_stream	= cs43130_mute_stream,
++	.no_capture_mute = 1,
+ };
+ 
+ static const struct snd_soc_dai_ops cs43130_dop_ops = {
+-- 
+2.39.5
+

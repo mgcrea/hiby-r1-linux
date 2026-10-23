@@ -1,7 +1,7 @@
-From ddd04085ed63eae464c660c4272f6497fd4c42f9 Mon Sep 17 00:00:00 2001
+From 3a6ba60a3209fd36e558aef51ecda64f72b92a4a Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:39:55 +0000
-Subject: [PATCH 16/33] MIPS: ingenic: add the X1600 ADC and the HiBy R1's keys
+Subject: [PATCH 16/35] MIPS: ingenic: add the X1600 ADC and the HiBy R1's keys
 
 X1600: the SAR ADC at 0x10070000, interrupt 11.
 

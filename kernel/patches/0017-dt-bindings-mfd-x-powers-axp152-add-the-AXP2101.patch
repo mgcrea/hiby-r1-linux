@@ -1,7 +1,7 @@
-From 532b8852cfdc73f6a44d65efe3be5bcf11557242 Mon Sep 17 00:00:00 2001
+From efa54caffc6e56d07f9b98b5f0a342780a8536e4 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:59:44 +0000
-Subject: [PATCH 17/33] dt-bindings: mfd: x-powers,axp152: add the AXP2101
+Subject: [PATCH 17/35] dt-bindings: mfd: x-powers,axp152: add the AXP2101
 
 Its interrupt line is optional, as for the AXP313A and the AXP15060: the
 driver then registers only the regulators. It has no DCDC frequency

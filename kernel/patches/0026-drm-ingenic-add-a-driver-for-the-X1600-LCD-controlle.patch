@@ -1,7 +1,7 @@
-From aeaebe5d7388fcbb497017538d4acbb29eb1c4d9 Mon Sep 17 00:00:00 2001
+From a0ae7cfd803e30d0bed2767536211a6c28bb3bd2 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:00:55 +0000
-Subject: [PATCH 26/33] drm/ingenic: add a driver for the X1600 LCD controller
+Subject: [PATCH 26/35] drm/ingenic: add a driver for the X1600 LCD controller
 
 The X1600 LCD controller has none of the registers ingenic-drm programs: it
 fetches each frame through a descriptor whose address it takes from FRM_DESC,
@@ -17,8 +17,8 @@ the GPL for HiBy's players.
  drivers/gpu/drm/Makefile                    |   1 +
  drivers/gpu/drm/ingenic/Kconfig             |  20 +
  drivers/gpu/drm/ingenic/Makefile            |   1 +
- drivers/gpu/drm/ingenic/ingenic-x1600-drm.c | 615 ++++++++++++++++++++
- 4 files changed, 637 insertions(+)
+ drivers/gpu/drm/ingenic/ingenic-x1600-drm.c | 616 ++++++++++++++++++++
+ 4 files changed, 638 insertions(+)
  create mode 100644 drivers/gpu/drm/ingenic/ingenic-x1600-drm.c
 
 diff --git a/drivers/gpu/drm/Makefile b/drivers/gpu/drm/Makefile
@@ -75,10 +75,10 @@ index f10cc1c..90072ad 100644
 +obj-$(CONFIG_DRM_INGENIC_X1600) += ingenic-x1600-drm.o
 diff --git a/drivers/gpu/drm/ingenic/ingenic-x1600-drm.c b/drivers/gpu/drm/ingenic/ingenic-x1600-drm.c
 new file mode 100644
-index 0000000..3f1f441
+index 0000000..b17c5dd
 --- /dev/null
 +++ b/drivers/gpu/drm/ingenic/ingenic-x1600-drm.c
-@@ -0,0 +1,615 @@
+@@ -0,0 +1,616 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * DRM driver for the LCD controller of the Ingenic X1600
@@ -188,7 +188,7 @@ index 0000000..3f1f441
 +/*
 + * The controller reads a descriptor at the start of each frame and then
 + * follows its next field. Each descriptor points at itself, so a frame
-+ * repeats until a new descriptor is linked in.
++ * repeats until FRM_START makes the controller take another one.
 + */
 +struct x1600_lcd_desc {
 +	u32 next;
@@ -475,9 +475,10 @@ index 0000000..3f1f441
 +	if (!lcd->running)
 +		return;
 +
-+	/* The controller moves to it at the end of the current frame. */
++	/* Fetched at the end of the current frame, as the vendor driver flips. */
 +	wmb();
-+	lcd->desc[lcd->cur].next = x1600_lcd_desc_addr(lcd, next);
++	writel(x1600_lcd_desc_addr(lcd, next), lcd->base + X1600_LCD_FRM_DESC);
++	writel(1, lcd->base + X1600_LCD_FRM_START);
 +	lcd->cur = next;
 +}
 +
