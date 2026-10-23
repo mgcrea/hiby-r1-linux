@@ -1,0 +1,102 @@
+From 6e47fdbbe00c888ddb13878165ab297d48554711 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 08:31:40 +0000
+Subject: [PATCH 05/24] usb: dwc2: gadget: start again after a session end
+
+When the B-session goes invalid (Session End Detected, the cable pulled),
+the gadget is disconnected and left in L3. Nothing brings it back unless
+a VBUS notifier calls usb_gadget_vbus_connect(): the next USB reset does
+not reinitialise a gadget that is not connected, and dwc2_hsotg_ep_queue()
+then refuses EP0's setup request because lx_state is not L0. Every
+enumeration after a replug fails with
+
+  dwc2_hsotg_enqueue_setup: failed queue (-11)
+
+as seen on an Ingenic X1600 (HiBy R1) in peripheral mode.
+
+On the session request interrupt that a new session raises, start the
+gadget again as dwc2_hsotg_vbus_session() does when the session becomes
+active.
+---
+ drivers/usb/dwc2/core.h      |  2 ++
+ drivers/usb/dwc2/core_intr.c |  3 +++
+ drivers/usb/dwc2/gadget.c    | 29 +++++++++++++++++++++++++++++
+ 3 files changed, 34 insertions(+)
+
+diff --git a/drivers/usb/dwc2/core.h b/drivers/usb/dwc2/core.h
+index 767251a..3d40eac 100644
+--- a/drivers/usb/dwc2/core.h
++++ b/drivers/usb/dwc2/core.h
+@@ -1421,6 +1421,7 @@ void dwc2_hsotg_core_init_disconnected(struct dwc2_hsotg *dwc2,
+ 				       bool reset);
+ void dwc2_hsotg_core_disconnect(struct dwc2_hsotg *hsotg);
+ void dwc2_hsotg_core_connect(struct dwc2_hsotg *hsotg);
++void dwc2_hsotg_session_start(struct dwc2_hsotg *hsotg);
+ void dwc2_hsotg_disconnect(struct dwc2_hsotg *dwc2);
+ int dwc2_hsotg_set_test_mode(struct dwc2_hsotg *hsotg, int testmode);
+ #define dwc2_is_device_connected(hsotg) (hsotg->connected)
+@@ -1459,6 +1460,7 @@ static inline void dwc2_hsotg_core_init_disconnected(struct dwc2_hsotg *dwc2,
+ 						     bool reset) {}
+ static inline void dwc2_hsotg_core_disconnect(struct dwc2_hsotg *hsotg) {}
+ static inline void dwc2_hsotg_core_connect(struct dwc2_hsotg *hsotg) {}
++static inline void dwc2_hsotg_session_start(struct dwc2_hsotg *hsotg) {}
+ static inline void dwc2_hsotg_disconnect(struct dwc2_hsotg *dwc2) {}
+ static inline int dwc2_hsotg_set_test_mode(struct dwc2_hsotg *hsotg,
+ 					   int testmode)
+diff --git a/drivers/usb/dwc2/core_intr.c b/drivers/usb/dwc2/core_intr.c
+index 9565e6a..836f123 100644
+--- a/drivers/usb/dwc2/core_intr.c
++++ b/drivers/usb/dwc2/core_intr.c
+@@ -322,6 +322,9 @@ static void dwc2_handle_session_req_intr(struct dwc2_hsotg *hsotg)
+ 		 * established
+ 		 */
+ 		dwc2_hsotg_disconnect(hsotg);
++
++		/* Start again if a session end left the gadget in L3. */
++		dwc2_hsotg_session_start(hsotg);
+ 	} else {
+ 		/* Turn on the port power bit. */
+ 		hprt0 = dwc2_read_hprt0(hsotg);
+diff --git a/drivers/usb/dwc2/gadget.c b/drivers/usb/dwc2/gadget.c
+index 102169b..8abae65 100644
+--- a/drivers/usb/dwc2/gadget.c
++++ b/drivers/usb/dwc2/gadget.c
+@@ -4718,6 +4718,35 @@ static int dwc2_hsotg_pullup(struct usb_gadget *gadget, int is_on)
+ 	return ret;
+ }
+ 
++/**
++ * dwc2_hsotg_session_start - start the gadget again for a new session
++ * @hsotg: The driver state
++ *
++ * A session end (the B-session going invalid, as when the cable is pulled)
++ * disconnects the gadget and leaves it in L3. Unless something outside the
++ * controller reports VBUS through usb_gadget_vbus_connect(), nothing brings
++ * it back: the next USB reset does not reinitialise a gadget that is not
++ * connected, and EP0 then refuses its setup request (-EAGAIN) at every
++ * enumeration. Start it again as dwc2_hsotg_vbus_session() would.
++ *
++ * Called with hsotg->lock held, when a new session is requested.
++ */
++void dwc2_hsotg_session_start(struct dwc2_hsotg *hsotg)
++{
++	if (hsotg->lx_state != DWC2_L3)
++		return;
++
++	dev_dbg(hsotg->dev, "%s: new session after session end\n", __func__);
++
++	hsotg->op_state = OTG_STATE_B_PERIPHERAL;
++	dwc2_hsotg_core_init_disconnected(hsotg, false);
++	if (hsotg->enabled) {
++		/* Enable ACG feature in device mode, if supported */
++		dwc2_enable_acg(hsotg);
++		dwc2_hsotg_core_connect(hsotg);
++	}
++}
++
+ static int dwc2_hsotg_vbus_session(struct usb_gadget *gadget, int is_active)
+ {
+ 	struct dwc2_hsotg *hsotg = to_hsotg(gadget);
+-- 
+2.39.5
+

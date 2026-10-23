@@ -1,7 +1,7 @@
-From 786af286e2e9ff1adde21a953780332dc4106b90 Mon Sep 17 00:00:00 2001
+From 0408d858e702507e8125c14964c54e753ddc7eae Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 06:35:45 +0000
-Subject: [PATCH 05/16] clk: ingenic: add the X1600 CGU driver
+Subject: [PATCH 06/24] clk: ingenic: add the X1600 CGU driver
 
 The register layout comes from the clock tables of the vendor kernel
 running on a HiBy R1 (read from its memory), and every rate was checked

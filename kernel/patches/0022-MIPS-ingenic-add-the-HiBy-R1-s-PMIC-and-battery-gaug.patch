@@ -1,0 +1,192 @@
+From 2722f46ff3a7aa3726afc7ffabdc34d16efd4663 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 07:59:44 +0000
+Subject: [PATCH 22/24] MIPS: ingenic: add the HiBy R1's PMIC and battery gauge
+
+I2C0 on PA28/PA29 carries the AXP2101 PMIC at 0x34 and the CW2015 fuel
+gauge at 0x62, with the battery profile of the stock firmware.
+---
+ arch/mips/boot/dts/ingenic/hiby-r1.dts | 146 +++++++++++++++++++++++++
+ 1 file changed, 146 insertions(+)
+
+diff --git a/arch/mips/boot/dts/ingenic/hiby-r1.dts b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+index 69b6699..064b490 100644
+--- a/arch/mips/boot/dts/ingenic/hiby-r1.dts
++++ b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+@@ -97,6 +97,18 @@ key-next {
+ 		};
+ 	};
+ 
++	/*
++	 * The charge settings of the stock firmware: 700 mA, 4.4 V, 100 mA
++	 * termination and precharge.
++	 */
++	battery: battery {
++		compatible = "simple-battery";
++		constant-charge-current-max-microamp = <700000>;
++		constant-charge-voltage-max-microvolt = <4400000>;
++		charge-term-current-microamp = <100000>;
++		precharge-current-microamp = <100000>;
++	};
++
+ 	/* PB2 powers the DAC; which of its rails it switches isn't known. */
+ 	vdac: regulator-dac {
+ 		compatible = "regulator-fixed";
+@@ -162,6 +174,125 @@ simple-audio-card,codec {
+ 	};
+ };
+ 
++&i2c0 {
++	status = "okay";
++
++	pinctrl-names = "default";
++	pinctrl-0 = <&pins_i2c0>;
++
++	clock-frequency = <400000>;
++
++	pmic: pmic@34 {
++		compatible = "x-powers,axp2101";
++		reg = <0x34>;
++
++		pinctrl-names = "default";
++		pinctrl-0 = <&pins_pmic_irq>;
++
++		interrupt-parent = <&gpb>;
++		interrupts = <23 IRQ_TYPE_LEVEL_LOW>;
++		interrupt-controller;
++		#interrupt-cells = <1>;
++
++		usb_power: usb-power {
++			compatible = "x-powers,axp2101-usb-power-supply";
++		};
++
++		/* Programs the charger from the battery's settings. */
++		battery-power {
++			compatible = "x-powers,axp2101-battery-power-supply";
++			monitored-battery = <&battery>;
++		};
++
++		/*
++		 * The rails that are on under the stock firmware, at its
++		 * voltages, and always on: a described rail no driver claims
++		 * is switched off at boot. The others aren't described, so
++		 * they are left alone.
++		 */
++		regulators {
++			dcdc1 {
++				regulator-min-microvolt = <3300000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-always-on;
++			};
++
++			dcdc2 {
++				regulator-min-microvolt = <1100000>;
++				regulator-max-microvolt = <1100000>;
++				regulator-always-on;
++			};
++
++			dcdc3 {
++				regulator-min-microvolt = <1800000>;
++				regulator-max-microvolt = <1800000>;
++				regulator-always-on;
++			};
++
++			dcdc4 {
++				regulator-min-microvolt = <1200000>;
++				regulator-max-microvolt = <1200000>;
++				regulator-always-on;
++			};
++
++			/* Always on: the touch driver takes no supply. */
++			aldo2 {
++				regulator-name = "vcc-touch";
++				regulator-min-microvolt = <3300000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-always-on;
++			};
++
++			/* On under the stock firmware; its consumer isn't known. */
++			aldo3 {
++				regulator-min-microvolt = <1100000>;
++				regulator-max-microvolt = <1100000>;
++				regulator-always-on;
++			};
++
++			aldo4 {
++				regulator-name = "vcc-headset-remote";
++				regulator-min-microvolt = <3300000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-always-on;
++			};
++
++			/* The panel, still as the stock kernel set it up. */
++			bldo1 {
++				regulator-name = "vcc-lcd";
++				regulator-min-microvolt = <2800000>;
++				regulator-max-microvolt = <2800000>;
++				regulator-always-on;
++			};
++
++			bldo2 {
++				regulator-name = "vccio-lcd";
++				regulator-min-microvolt = <2800000>;
++				regulator-max-microvolt = <2800000>;
++				regulator-always-on;
++			};
++		};
++	};
++
++	battery-gauge@62 {
++		compatible = "cellwise,cw2015";
++		reg = <0x62>;
++		/* Charging while USB power is present. */
++		power-supplies = <&usb_power>;
++		/* The stock firmware's profile for the R1's battery. */
++		cellwise,battery-profile = /bits/ 8 <
++			0x18 0x0A 0x65 0x65 0x69 0x6A 0x6A 0x68
++			0x66 0x61 0x5F 0x59 0x53 0x4F 0x4A 0x46
++			0x42 0x3B 0x33 0x29 0x24 0x33 0x45 0x4B
++			0x27 0x21 0x0C 0xCD 0x20 0x40 0x43 0x4A
++			0x4F 0x4D 0x4E 0x4E 0x3C 0x1A 0x65 0x30
++			0x09 0x43 0x11 0x38 0x70 0x9A 0xB5 0x1E
++			0x44 0x77 0x97 0x9B 0x80 0xCD 0xFF 0xCB
++			0x2F 0x00 0x64 0xA5 0xB5 0x08 0x40 0x99
++		>;
++	};
++};
++
+ &i2c1 {
+ 	status = "okay";
+ 
+@@ -213,6 +344,12 @@ &otg {
+ };
+ 
+ &pinctrl {
++	pins_i2c0: i2c0 {
++		function = "i2c0";
++		groups = "i2c0-data-a";
++		bias-disable;
++	};
++
+ 	pins_i2c1: i2c1 {
+ 		function = "i2c1";
+ 		groups = "i2c1-data-b-19";
+@@ -226,6 +363,15 @@ pins_i2s: i2s {
+ 		bias-disable;
+ 	};
+ 
++	/*
++	 * The PMIC's interrupt output is open drain with no pull-up on the
++	 * board: without this PB23 reads low and the interrupt never stops.
++	 */
++	pins_pmic_irq: pmic-irq {
++		pins = "PB23";
++		bias-pull-up;
++	};
++
+ 	pins_msc1: msc1 {
+ 		function = "mmc1";
+ 		groups = "mmc1-1bit", "mmc1-4bit";
+-- 
+2.39.5
+

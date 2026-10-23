@@ -1,7 +1,7 @@
-From 8ec0948036d41824e375a8a9c9d035f2d5072cee Mon Sep 17 00:00:00 2001
+From ddd04085ed63eae464c660c4272f6497fd4c42f9 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:39:55 +0000
-Subject: [PATCH 15/16] MIPS: ingenic: add the X1600 ADC and the HiBy R1's keys
+Subject: [PATCH 16/24] MIPS: ingenic: add the X1600 ADC and the HiBy R1's keys
 
 X1600: the SAR ADC at 0x10070000, interrupt 11.
 
@@ -15,7 +15,7 @@ through gpio-keys.
  2 files changed, 58 insertions(+)
 
 diff --git a/arch/mips/boot/dts/ingenic/hiby-r1.dts b/arch/mips/boot/dts/ingenic/hiby-r1.dts
-index 4da60f9..ab92934 100644
+index bcdf364..69b6699 100644
 --- a/arch/mips/boot/dts/ingenic/hiby-r1.dts
 +++ b/arch/mips/boot/dts/ingenic/hiby-r1.dts
 @@ -4,6 +4,7 @@

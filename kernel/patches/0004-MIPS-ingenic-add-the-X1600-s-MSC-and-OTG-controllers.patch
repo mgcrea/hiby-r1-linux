@@ -1,7 +1,7 @@
-From 3aba013408ebe8b090e058ee87732832a432d192 Mon Sep 17 00:00:00 2001
+From 20b5484e78e3522914fb77749c4145cadd07533b Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 05:57:55 +0000
-Subject: [PATCH 04/16] MIPS: ingenic: add the X1600's MSC and OTG controllers
+Subject: [PATCH 04/24] MIPS: ingenic: add the X1600's MSC and OTG controllers
 
 Describe both MSC controllers and the USB OTG controller, clocked by
 fixed stand-ins at the rates the stock firmware leaves until there is an
@@ -14,7 +14,7 @@ controller as a peripheral.
  2 files changed, 88 insertions(+)
 
 diff --git a/arch/mips/boot/dts/ingenic/hiby-r1.dts b/arch/mips/boot/dts/ingenic/hiby-r1.dts
-index 954cdcb..f34e749 100644
+index 954cdcb..de7b8a3 100644
 --- a/arch/mips/boot/dts/ingenic/hiby-r1.dts
 +++ b/arch/mips/boot/dts/ingenic/hiby-r1.dts
 @@ -46,3 +46,24 @@ framebuffer@2600000 {
@@ -37,8 +37,8 @@ index 954cdcb..f34e749 100644
 +	status = "okay";
 +
 +	/*
-+	 * Peripheral only: in OTG mode the controller takes the host role
-+	 * with a USB-C cable to a Mac.
++	 * Peripheral only: host mode would need the USB-C controller as a
++	 * source and VBUS switched on through PC24.
 +	 */
 +	dr_mode = "peripheral";
 +};
