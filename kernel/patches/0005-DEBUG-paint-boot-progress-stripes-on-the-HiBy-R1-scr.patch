@@ -1,34 +1,36 @@
-From f342a6ac1e0f1390cf2ca28682ad1c0494b99523 Mon Sep 17 00:00:00 2001
+From d4c717d5dd668b0a7faced56976a633b3768672c Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Thu, 22 Oct 2026 22:15:10 +0000
-Subject: [PATCH 4/4] DEBUG: paint boot progress stripes on the HiBy R1 screen
+Subject: [PATCH 5/5] DEBUG: paint boot progress stripes on the HiBy R1 screen
 
 Not for upstream: with no serial console, a stripe per milestone shows
 how far a boot got. kernel_entry paints black (row 352) before anything
 else and grey (row 376) after clearing BSS; start_kernel paints one
 stripe per step from row 400 (n = 0..8) and setup_arch one per step
-(n = 10..16), on both framebuffer pages.
+(n = 10..16). Only page 0 of the framebuffer: page 1 holds the display's
+frame descriptor.
 ---
- arch/mips/include/asm/mach-ingenic/r1-mark.h | 36 ++++++++++++++++++++
+ arch/mips/include/asm/mach-ingenic/r1-mark.h | 35 ++++++++++++++++++++
  arch/mips/ingenic/Kconfig                    |  7 ++++
- arch/mips/kernel/head.S                      | 26 ++++++++++++++
+ arch/mips/kernel/head.S                      | 23 +++++++++++++
  arch/mips/kernel/setup.c                     | 12 +++++++
- init/main.c                                  | 15 ++++++++
- 5 files changed, 96 insertions(+)
+ init/main.c                                  | 15 +++++++++
+ 5 files changed, 92 insertions(+)
  create mode 100644 arch/mips/include/asm/mach-ingenic/r1-mark.h
 
 diff --git a/arch/mips/include/asm/mach-ingenic/r1-mark.h b/arch/mips/include/asm/mach-ingenic/r1-mark.h
 new file mode 100644
-index 0000000..527fe51
+index 0000000..f8eecf0
 --- /dev/null
 +++ b/arch/mips/include/asm/mach-ingenic/r1-mark.h
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,35 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * Boot progress for the HiBy R1 without a serial console: paint stripe @n
 + * straight into the framebuffer the display controller is scanning out
-+ * (two 480x800 RGB565 pages at 0x02600000; both are painted, whichever one
-+ * is on screen), through KSEG1 so no cache or
++ * (page 0 of two 480x800 RGB565 pages at 0x02600000: the loader makes it the
++ * one on screen, and keeps the frame descriptor in page 1), through KSEG1 so
++ * no cache or
 + * mapping is needed. Stripes start at row 400 so the console, drawn from the
 + * top, doesn't cover them early on.
 + */
@@ -49,10 +51,8 @@ index 0000000..527fe51
 +	unsigned short c = colours[n % ARRAY_SIZE(colours)];
 +	unsigned int i;
 +
-+	for (i = 0; i < 480 * 16; i++) {
++	for (i = 0; i < 480 * 16; i++)
 +		p[i] = c;
-+		p[i + 480 * 800] = c;
-+	}
 +}
 +#else
 +static inline void r1_mark(unsigned int n) { }
@@ -78,26 +78,23 @@ index a58b9f3..caab93f 100644
  	bool
  	select MIPS_CPU_SCACHE
 diff --git a/arch/mips/kernel/head.S b/arch/mips/kernel/head.S
-index d99ed58..0a14825 100644
+index d99ed58..5b6c162 100644
 --- a/arch/mips/kernel/head.S
 +++ b/arch/mips/kernel/head.S
-@@ -83,8 +83,32 @@ FEXPORT(__kernel_entry)
+@@ -83,8 +83,29 @@ FEXPORT(__kernel_entry)
  
  	__REF
  
 +#ifdef CONFIG_HIBY_R1_BOOT_MARKS
-+	/* See asm/mach-ingenic/r1-mark.h: a 16-row stripe on both pages. */
++	/* See asm/mach-ingenic/r1-mark.h: a 16-row stripe on page 0. */
 +	.macro	r1_asm_mark row, colour
 +	.set	push
 +	.set	reorder
 +	li	t0, 0xa2600000 + \row * 960
-+	li	t1, 0xa2600000 + 768000 + \row * 960
 +	li	t2, 480 * 16
 +	li	t3, \colour
 +9:	sh	t3, 0(t0)
-+	sh	t3, 0(t1)
 +	addiu	t0, 2
-+	addiu	t1, 2
 +	addiu	t2, -1
 +	bnez	t2, 9b
 +	.set	pop
@@ -114,7 +111,7 @@ index d99ed58..0a14825 100644
  	kernel_entry_setup			# cpu specific setup
  
  	setup_c0_status_pri
-@@ -103,6 +127,8 @@ NESTED(kernel_entry, 16, sp)			# kernel entry point
+@@ -103,6 +124,8 @@ NESTED(kernel_entry, 16, sp)			# kernel entry point
  	LONG_S		zero, (t0)
  	bne		t0, t1, 1b
  

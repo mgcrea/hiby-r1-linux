@@ -1,7 +1,7 @@
-From 11344ae5d2dfb6c8368e50a200a179e3a1f57ae7 Mon Sep 17 00:00:00 2001
+From 0de3b5292274e85bd21f21aec0597455717d0515 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Thu, 22 Oct 2026 22:15:09 +0000
-Subject: [PATCH 2/4] MIPS: ingenic: add a minimal X1600 and HiBy R1 device
+Subject: [PATCH 2/5] MIPS: ingenic: add a minimal X1600 and HiBy R1 device
  tree
 
 Enough to boot to a console on the framebuffer the stock kernel left
@@ -28,7 +28,7 @@ index 6e674f1..d52b147 100644
  dtb-$(CONFIG_X1830_CU1830_NEO)	+= cu1830-neo.dtb
 diff --git a/arch/mips/boot/dts/ingenic/hiby-r1.dts b/arch/mips/boot/dts/ingenic/hiby-r1.dts
 new file mode 100644
-index 0000000..20e1324
+index 0000000..954cdcb
 --- /dev/null
 +++ b/arch/mips/boot/dts/ingenic/hiby-r1.dts
 @@ -0,0 +1,48 @@
@@ -42,7 +42,8 @@ index 0000000..20e1324
 +	model = "HiBy R1";
 +
 +	chosen {
-+		bootargs = "console=tty0 loglevel=8";
++		/* clk_ignore_unused: no clock driver may gate what the display uses. */
++		bootargs = "console=tty0 loglevel=8 clk_ignore_unused";
 +	};
 +
 +	memory@0 {
@@ -57,14 +58,13 @@ index 0000000..20e1324
 +
 +		/*
 +		 * The display controller keeps scanning out what the stock
-+		 * kernel set up: a self-linked frame descriptor and two
-+		 * 480x800 RGB565 pages.
++		 * kernel set up: two 480x800 RGB565 pages, through a frame
++		 * descriptor the controller rereads every frame. The stock
++		 * kernel allocates that descriptor anywhere, so before the
++		 * jump the loader chains it to a self-linked copy at
++		 * 0x02776f00, in the last row of page 1: memory the stock
++		 * kernel won't hand out, and which nothing shows here.
 +		 */
-+		lcd_descriptor: lcd-descriptor@2518000 {
-+			reg = <0x02518000 0x1000>;
-+			no-map;
-+		};
-+
 +		lcd_pages: framebuffer@2600000 {
 +			reg = <0x02600000 0x177000>;
 +			no-map;
