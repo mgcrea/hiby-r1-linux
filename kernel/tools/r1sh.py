@@ -2,13 +2,14 @@
 
 usage: python3 r1sh.py 'command' ...      (each runs in turn; output printed)
        python3 r1sh.py --port               print the R1's serial port, or fail
+       python3 r1sh.py --push LOCAL REMOTE  copy a file (gzip + base64 in chunks)
 
 Finds the R1's port by its USB product name ("Gadget Serial", the kernel's
 g_serial) in the IORegistry, since other boards (an ESP32...) also show up
 as /dev/cu.usbmodem*. Sends each command followed by an end marker and
 prints what comes back until the marker (or a timeout).
 """
-import os, select, subprocess, sys, termios, time, tty
+import base64, gzip, os, select, subprocess, sys, termios, time, tty
 
 
 def r1_port():
@@ -50,13 +51,33 @@ def read_until(marker, timeout):
 
 os.write(fd, b"stty -echo 2>/dev/null; echo R1SH_READY\r")
 read_until(b"R1SH_READY", 5)
-for cmd in sys.argv[1:]:
+
+
+def run(cmd, show=True):
+    """Runs cmd and returns its exit status as a string ("" on a timeout)."""
     os.write(fd, cmd.encode() + b"; echo R1SH_END_$?\r")
     out = read_until(b"R1SH_END_", 60)
     out += read_until(b"\n", 1)
     text = out.decode(errors="replace").replace("\r", "")
     body, _, status = text.partition("R1SH_END_")
-    print(body.strip("\n"))
     status = (status.split() or [""])[0]
-    if status not in ("", "0"):
-        print(f"[exit {status}]")
+    if show:
+        print(body.strip("\n"))
+        if status not in ("", "0"):
+            print(f"[exit {status}]")
+    return status
+
+
+if sys.argv[1:2] == ["--push"]:
+    local, remote = sys.argv[2:4]
+    data = base64.b64encode(gzip.compress(open(local, "rb").read())).decode()
+    # Lines well under the tty's 4095-byte canonical limit.
+    chunks = [data[i:i + 2048] for i in range(0, len(data), 2048)]
+    run(f"rm -f {remote}.b64", show=False)
+    for i, chunk in enumerate(chunks):
+        if run(f"echo {chunk} >> {remote}.b64", show=False) != "0":
+            sys.exit(f"push failed at chunk {i + 1} of {len(chunks)}")
+    sys.exit(0 if run(f"base64 -d {remote}.b64 | gunzip > {remote} && rm {remote}.b64"
+                      f" && chmod +x {remote}") == "0" else 1)
+for cmd in sys.argv[1:]:
+    run(cmd)
