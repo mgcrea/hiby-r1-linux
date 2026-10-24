@@ -5,6 +5,10 @@
       out/usbboot/stage2.bin out/r1-linux.bin --entry 0x$(grep " kernel_entry$" out/System.map | cut -c9-16) \
       --apcr 0x02E049CD --epcr 0x019051CD --ccr 0x9A094410 [--wdt 20]   # stock clocks
 
+A flash image (out/r1-linux.uimage) loads by its header with --uimage; --spl-args
+passes what the stock SPL passes (a0 2, a1 argv, a2 0), to test it as the SPL
+would boot it.
+
 Build the stages first (tools/usbboot/build.sh). Reach the boot ROM without Next:
   adb shell "devmem 0x100000cc 32 0x42575302; sync; reboot -f"
   uv run --with pyusb python tools/usbboot/usbboot.py --probe      # just talk to the boot ROM
@@ -29,6 +33,11 @@ STAGE1_RESULT = 0x8000F000
 STAGE1_MAGIC = 0xC0DEF00D
 STAGE2_ADDR = 0x8000A000
 PARAMS_OFF = 8
+# Free once usbstage1 has run: the argv block for --spl-args.
+ARGV_ADDR = 0x8000F800
+# The stock SPL's command line for the first slot (mem-start/mem-end filled in).
+SPL_CMDLINE = (b"console=ttyS2,3000000n8 quiet mem=64M@0x0 init=/linuxrc flashtype=nand "
+               b"root=/dev/mtdblock_bbt_ro2 rootfstype=squashfs ro")
 CHUNK = 256 * 1024
 
 
@@ -82,6 +91,8 @@ def main():
     ap.add_argument("--epcr", type=lambda s: int(s, 0), default=0)
     ap.add_argument("--ccr", type=lambda s: int(s, 0), default=0)
     ap.add_argument("--wdt", type=int, default=20, help="watchdog seconds, 0 for none")
+    ap.add_argument("--uimage", action="store_true", help="kernel is a uImage: load and entry from its header")
+    ap.add_argument("--spl-args", action="store_true", help="a0..a2 as the stock SPL sets them")
     a = ap.parse_args()
 
     rom = BootRom()
@@ -92,12 +103,18 @@ def main():
     stage1 = open(a.stage1, "rb").read()
     stage2 = bytearray(open(a.stage2, "rb").read())
     kernel = open(a.kernel, "rb").read()
+    if a.uimage:
+        magic, _, _, size, a.load, a.entry = struct.unpack_from(">6I", kernel)
+        if magic != 0x27051956:
+            sys.exit("not a uImage")
+        kernel = kernel[64:64 + size]
+    args = [0, 0, 0, 0]
+    if a.spl_args:
+        args = [2, ARGV_ADDR, 0, 0]
     if struct.unpack_from("<I", stage2, PARAMS_OFF)[0] != 0x54423152:
         sys.exit("stage2 has no parameter block")
     # 45.8 watchdog ticks a second (EXCLK / 512 / 1024), docs/kernel.md.
     ticks = min(int(a.wdt * 45.8), 0xFFFF)
-    struct.pack_into("<11I", stage2, PARAMS_OFF + 4, a.entry, 0, 0, 0, 0,
-                     a.apcr, 0, a.epcr, a.ccr, ticks, 0)
 
     rom.req(3)
     rom.send(STAGE1_ADDR, stage1)
@@ -109,12 +126,18 @@ def main():
     if res[0] != STAGE1_MAGIC or res[1] != 0:
         sys.exit("DDR init failed: " + " ".join("%08x" % r for r in res))
 
+    # Put back the CPSPR usbstage1 found (its word 13), as the stock SPL
+    # would have left it.
+    struct.pack_into("<13I", stage2, PARAMS_OFF + 4, a.entry, *args,
+                     a.apcr, 0, a.epcr, a.ccr, ticks, 0, 1, res[13])
     t = time.time()
     rom.send(a.load, kernel)
     print("kernel: %d bytes to 0x%08x in %.1f s" % (len(kernel), a.load, time.time() - t))
     back = rom.recv(a.load, 4096)
     if back != kernel[:4096]:
         sys.exit("kernel read-back differs: DDR not usable")
+    if a.spl_args:
+        rom.send(ARGV_ADDR, struct.pack("<II", 0, ARGV_ADDR + 16) + bytes(8) + SPL_CMDLINE + b"\0")
     rom.send(STAGE2_ADDR, bytes(stage2))
     rom.req(3)
     print("starting stage2, entry 0x%08x, watchdog %d s" % (a.entry, a.wdt))

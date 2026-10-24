@@ -14,6 +14,8 @@
 #define CPEPCR		REG(0xb0000018)
 #define CLKGR0		REG(0xb0000020)
 #define SLPC		REG(0xb00000cc)
+#define CPSPR		REG(0xb0000034)
+#define CPSPPR		REG(0xb0000038)
 #define CPCSR		REG(0xb00000d4)
 
 #define PLL_EN		0x1
@@ -38,6 +40,7 @@ struct params {
 	uint32_t apcr, mpcr, epcr, ccr;	/* 0: leave as is */
 	uint32_t wdt_ticks;		/* 0: no watchdog */
 	uint32_t status;		/* progress, for a host that reads it */
+	uint32_t cpspr_set, cpspr;	/* CPSPR to put back (usbstage1 clears it) */
 };
 
 extern struct params params;
@@ -87,6 +90,16 @@ void stage2_main(void)
 		set_mux(params.ccr);
 	}
 	params.status = 2;
+
+	/*
+	 * usbstage1 keeps its boot flags in CPSPR; the stock SPL leaves it
+	 * alone, and r1-loader relies on it across a reset.
+	 */
+	if (params.cpspr_set) {
+		CPSPPR = 0x5a5a;
+		CPSPR = params.cpspr;
+		CPSPPR = 0xa5a5;
+	}
 
 	/* The boot ROM reads SLPC at reset: leave no USB-boot request. */
 	SLPC = 0;
