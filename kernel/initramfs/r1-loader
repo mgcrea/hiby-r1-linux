@@ -1,0 +1,62 @@
+#!/bin/sh
+# Hand over to the SD card's kernel, when this kernel is the one in flash.
+#
+# The same image runs in both roles. The reset-cause register (RSR) tells
+# them apart: a kernel the boot loader started finds the cause of the reset
+# there; this script clears it, so a kernel started by kexec finds 0. (Under
+# the auto-jump firmware, stock's r1-mainline.sh clears it before r1jump.)
+#
+# CPSPR, a CPM scratch register that a watchdog reset keeps and nothing in
+# the boot chain touches, holds PENDING from the kexec until the card
+# kernel's init clears it (r1-loader done). Found still PENDING after a
+# reset, the card kernel failed: this kernel carries on instead, once.
+#
+#   r1-loader          decide, and kexec or return
+#   r1-loader done     clear PENDING (the card kernel came up)
+ML=/mnt/sd_0/.r1-mainline
+RSR=0x10000008
+CPSPR=0x10000034
+CPSPPR=0x10000038	# CPSPR's write lock: 0x5a5a opens it, 0xa5a5 closes it
+PENDING=0x52314b58	# "R1KX"
+
+# To the kernel log as well, where dmesg keeps it.
+log() { echo "r1-loader: $*"; echo "r1-loader: $*" > /dev/kmsg; }
+
+cpspr() {
+	devmem $CPSPPR 32 0x5a5a
+	devmem $CPSPR 32 $1
+	devmem $CPSPPR 32 0xa5a5
+}
+
+if [ "$1" = done ]; then
+	[ $(($(devmem $CPSPR 32))) = $((PENDING)) ] && cpspr 0
+	exit 0
+fi
+
+rsr=$(devmem $RSR 32)
+devmem $RSR 32 0
+[ $((rsr)) = 0 ] && { log "reset cause 0: started by kexec or r1jump"; exit 0; }
+log "reset cause $rsr: started by the boot loader"
+
+if [ $(($(devmem $CPSPR 32))) = $((PENDING)) ]; then
+	log "the card kernel didn't come up last time: staying on this one"
+	cpspr 0
+	exit 0
+fi
+# Volume Down held while the R1 starts (about 1.0 V on ADC channel 0; idle
+# reads 4095, Volume Up 2048): stay on this kernel.
+key=$(cat /sys/bus/iio/devices/iio:device0/in_voltage0_raw 2>/dev/null)
+if [ -n "$key" ] && [ $key -ge 1000 ] && [ $key -le 1800 ]; then
+	log "Volume Down held: staying on this kernel"
+	exit 0
+fi
+[ -e /mnt/sd_0/.no-kexec ] && { log ".no-kexec on the card"; exit 0; }
+[ -f $ML/r1-linux.bin ] && [ -f $ML/entry ] || { log "no kernel on the card"; exit 0; }
+
+log "starting the card's kernel"
+cpspr $PENDING
+r1kexec $ML/r1-linux.bin 0x80100000 $(cat $ML/entry)
+# Only reached if kexec failed.
+log "kexec failed: staying on this kernel"
+cpspr 0
+exit 0

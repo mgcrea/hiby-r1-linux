@@ -23,6 +23,33 @@ if mount -t exfat -o ro /dev/mmcblk0p1 /mnt/sd_0; then
 else
 	echo "SD card: not mounted"; ls /dev | grep mmc
 fi
+# The kernel in flash hands over to the card's kernel here, if there is one
+# (r1-loader); it returns when this kernel carries on.
+/sbin/r1-loader
+# The libraries, adbd, BlueZ and the font come from the stock root
+# filesystem in flash (`rootfs`, an LZO squashfs) so that nothing runs from
+# the card, which can then go to a computer as a USB disk (r1-share). If
+# that doesn't mount, from the card, where tools/sdsync.sh copied them.
+ML=/mnt/sd_0/.r1-mainline
+mtd=$(grep '"rootfs"$' /proc/mtd | cut -d: -f1)
+mkdir -p /rom /tmp/firmware/brcm
+if [ -n "$mtd" ] && mount -t squashfs -o ro /dev/mtdblock${mtd#mtd} /rom; then
+	echo "system: /rom ($mtd)"
+	ln -s /rom/lib /lib
+	ln -s /rom/usr/lib /usr/lib
+	ln -s /rom/usr/resource/fonts/default.otf /usr/resource/fonts/default.otf
+	export PATH=$PATH:/rom/usr/bin:/rom/usr/libexec/bluetooth
+else
+	echo "system: the card"
+	ln -s $ML/lib /lib
+	ln -s $ML/default.otf /usr/resource/fonts/default.otf
+	export PATH=$PATH:$ML:$ML/bt
+fi
+# The Bluetooth firmware sdsync.sh picked for this module, in RAM: the chip
+# may load it again while the card is away. r1-bt binds hci_bcm again so
+# that it does, from here.
+cp $ML/lib/firmware/brcm/BCM43430A1.hcd /tmp/firmware/brcm/ 2>/dev/null
+echo -n /tmp/firmware > /sys/module/firmware_class/parameters/path
 # What has to outlive a restart lives on the card, in $R1_STATE: r1player
 # copies its settings and scores there, and bluetoothd's pairings, in a
 # short read-write window. Put them back where r1player and bluetoothd
@@ -36,26 +63,30 @@ done
 # The pairings come as a tar of /usr/data/bluetooth: exFAT refuses BlueZ's
 # directory names, which are addresses with colons.
 [ -f $R1_STATE/bluetooth.tar ] && tar -xf $R1_STATE/bluetooth.tar -C /usr/data
-# The USB gadget (serial shell, and ADB when adbd is on the card), after the
-# card since adbd lives there.
+# The USB gadget: serial shell, ADB when there is an adbd, and the card
+# reader r1-share hands the card to.
 /sbin/r1-usb > /tmp/usb.log 2>&1
-# Bluetooth, when tools/sdsync.sh put its userspace on the card; in the
-# background, since setting the chip up takes a few seconds. Its tools
-# (bluetoothctl, bluealsa-cli) are on r1player's PATH.
+# Bluetooth, in the background, since setting the chip up takes a few
+# seconds. Its tools (bluetoothctl, bluealsa-cli) are on r1player's PATH.
 /sbin/r1-bt > /tmp/bt.log 2>&1 &
-export PATH=$PATH:/mnt/sd_0/.r1-mainline/bt
 
 # r1player, when tools/sdsync.sh put it on the card. The console gives the
 # screen up first: fbcon would draw kernel messages over the player.
 # /usr/data/r1player (its index) is in RAM, so the index is rebuilt at
 # every boot.
-player=/mnt/sd_0/.r1-mainline/r1player
+# This kernel came up: clear the kexec flag (r1-loader).
+/sbin/r1-loader done
+
+# It runs from a copy in RAM, which each restart takes again from the card
+# (killing it picks up a new build), unless the card is with the computer.
+player=$ML/r1player
 if [ -x $player ]; then
 	for vt in /sys/class/vtconsole/vtcon*; do
 		grep -q "frame buffer" $vt/name && echo 0 > $vt/bind
 	done
 	( while :; do
-		$player >> /tmp/r1player.log 2>&1
+		cp $player /tmp/r1player.new 2>/dev/null && mv /tmp/r1player.new /tmp/r1player
+		/tmp/r1player >> /tmp/r1player.log 2>&1
 		echo "r1player exited with $?" >> /tmp/r1player.log
 		sleep 2
 	done ) &

@@ -1,0 +1,47 @@
+#!/bin/sh
+# Hand the SD card to the computer the R1 is plugged into, as a USB disk
+# (the card reader r1-usb sets up), and take it back when the computer
+# ejects it or the cable comes out. r1player runs it and waits for it; it
+# prints a line at each step and exits
+#   0  the card went to the computer and is back
+#   1  no computer: the gadget isn't configured
+#   2  the card is busy: something on the R1 still has a file open on it
+#   3  the card didn't mount again
+# The R1 and the computer must never both have it mounted: each caches the
+# filesystem and would write over the other's changes. While the computer
+# has it, /tmp/sd-shared exists and /mnt/sd_0 is an empty directory.
+LUN=/sys/kernel/config/usb_gadget/r1/functions/mass_storage.0/lun.0
+SD=/mnt/sd_0
+DEV=/dev/mmcblk0p1
+udc() { cat /sys/class/udc/*/state 2>/dev/null; }
+back() { mount -t exfat -o ro $DEV $SD || { echo "the card didn't mount"; rm -f /tmp/sd-shared; exit 3; }; rm -f /tmp/sd-shared; }
+
+[ "$(udc)" = configured ] || { echo "no computer"; exit 1; }
+sync
+# r1player has just let go of the track it played and stopped reading: give
+# them a moment.
+i=0
+until umount $SD 2>/dev/null; do
+	i=$((i + 1))
+	[ $i -lt 10 ] || { echo "busy: $(fuser -m $SD 2>/dev/null)"; exit 2; }
+	usleep 300000
+done
+touch /tmp/sd-shared
+if ! echo $DEV > $LUN/file; then
+	back
+	echo "the card reader refused the card"
+	exit 1
+fi
+echo shared
+# The computer's eject empties lun.0/file. A computer asleep leaves the
+# gadget suspended, with the card still mounted there.
+while :; do
+	usleep 300000
+	[ -n "$(cat $LUN/file)" ] || { echo ejected; break; }
+	case "$(udc)" in
+	configured | suspended) ;;
+	*) echo "unplugged"; echo 1 > $LUN/forced_eject; break ;;
+	esac
+done
+back
+echo back

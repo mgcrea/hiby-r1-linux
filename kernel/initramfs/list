@@ -11,19 +11,18 @@ dir /usr/sbin 0755 0 0
 dir /mnt 0755 0 0
 dir /mnt/sd_0 0755 0 0
 dir /tmp 1777 0 0
-# r1player, its glibc and its font live on the SD card (tools/sdsync.sh).
-slink /lib /mnt/sd_0/.r1-mainline/lib 0777 0 0
+# /lib, /usr/lib and the font are links init makes: to the stock root
+# filesystem in flash (/rom), or to the SD card (tools/sdsync.sh).
 dir /usr/data 0755 0 0
 dir /usr/data/r1player 0755 0 0
 dir /usr/resource 0755 0 0
 dir /usr/resource/fonts 0755 0 0
-slink /usr/resource/fonts/default.otf /mnt/sd_0/.r1-mainline/default.otf 0777 0 0
 file /bin/busybox /bin/busybox 0755 0 0
 file /init /r1/initramfs/init 0755 0 0
 file /sbin/r1-reboot /r1/initramfs/r1-reboot 0755 0 0
 file /usr/bin/tinymix /opt/tinyalsa/tinymix 0755 0 0
 file /usr/bin/r1tone /src/build-arm64/r1tone 0755 0 0
-# Bluetooth: BlueZ and bluez-alsa come from the card (tools/sdsync.sh).
+# Bluetooth: the stock BlueZ and bluez-alsa (/rom, or the card).
 dir /etc 0755 0 0
 dir /etc/dbus-1 0755 0 0
 file /etc/dbus-1/system.conf /r1/initramfs/dbus.conf 0644 0 0
@@ -32,5 +31,10 @@ file /etc/passwd /r1/initramfs/passwd 0644 0 0
 file /etc/group /r1/initramfs/group 0644 0 0
 file /etc/nsswitch.conf /r1/initramfs/nsswitch.conf 0644 0 0
 file /sbin/r1-bt /r1/initramfs/r1-bt 0755 0 0
-# The USB gadget: serial and ADB (adbd from the card).
+# The USB gadget: serial, ADB (the stock adbd) and the card reader that
+# r1-share hands the SD card to.
 file /sbin/r1-usb /r1/initramfs/r1-usb 0755 0 0
+file /sbin/r1-share /r1/initramfs/r1-share 0755 0 0
+# The flash kernel's hand-over to the card's kernel.
+file /sbin/r1-loader /r1/initramfs/r1-loader 0755 0 0
+file /sbin/r1kexec /src/build-arm64/r1kexec 0755 0 0

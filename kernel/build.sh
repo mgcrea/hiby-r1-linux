@@ -4,6 +4,9 @@
 #   build.sh            reset the tree to upstream, apply patches/, build;
 #                       writes out/r1-linux.bin (vmlinux.bin + DTB) and
 #                       prints the load address and entry point for r1jump
+#                       and out/r1-linux.uimage (the same kernel xz-compressed
+#                       as a self-decompressing uImage, for the R1's flash
+#                       kernel slot, which the stock boot loader loads)
 #   build.sh patches    export the volume tree's commits back to patches/
 #
 # The tree lives in the r1-linux Docker volume (Linux needs a case-sensitive
@@ -66,10 +69,11 @@ docker run --rm -v r1-linux:/src -v "$here:/r1" r1-mainline sh -euc '
   # Test tools for the initramfs, built against tinyalsa (see Dockerfile).
   ta=/opt/tinyalsa
   mipsel-linux-gnu-gcc -static -Os -Wall -I$ta/include -o $O/r1tone /r1/initramfs/r1tone.c $ta/libtinyalsa.a -lm
+  mipsel-linux-gnu-gcc -static -nostdlib -ffreestanding -mno-abicalls -fno-pic -no-pie -Os -Wall -Wl,--build-id=none -o $O/r1kexec /r1/initramfs/r1kexec.c
   # Through a log file: a pipe would hide make failing, and the last
   # image would be reported as new.
   status=0
-  mk -j$(nproc) vmlinux.bin dtbs > $O/make.log 2>&1 || status=$?
+  mk -j$(nproc) vmlinux.bin vmlinuz.bin dtbs > $O/make.log 2>&1 || status=$?
   grep -v -E "^\s*$" $O/make.log || true
   [ $status = 0 ] || { echo "make failed"; exit 1; }
   cat $O/arch/mips/boot/vmlinux.bin $O/arch/mips/boot/dts/ingenic/hiby-r1.dtb > /r1/out/r1-linux.bin
@@ -80,4 +84,23 @@ docker run --rm -v r1-linux:/src -v "$here:/r1" r1-mainline sh -euc '
   load=$(mipsel-linux-gnu-readelf -l $O/vmlinux | awk "/LOAD/ {print \$3; exit}")
   entry=$(mipsel-linux-gnu-readelf -h $O/vmlinux | awk "/Entry point/ {print \$4}")
   echo "out/r1-linux.bin: $(stat -c %s /r1/out/r1-linux.bin) bytes, load $load, entry $entry"
+
+  # The flash image: the decompressor (vmlinuz) with the DTB after it, where
+  # it looks for one (by its magic; vmlinuz is stripped, so the offset cannot
+  # be checked here) and moves it behind the kernel it unpacks, in a legacy
+  # uImage header: the stock SPL loads it by the header (load address,
+  # entry, size; it checks no CRC) into memory and jumps to it.
+  z=$O/vmlinuz
+  zload=$(mipsel-linux-gnu-readelf -l $z | awk "/LOAD/ {print \$3; exit}")
+  zentry=$(mipsel-linux-gnu-readelf -h $z | awk "/Entry point/ {print \$4}")
+  cat $O/arch/mips/boot/vmlinuz.bin $O/arch/mips/boot/dts/ingenic/hiby-r1.dtb > $O/vmlinuz-dtb.bin
+  # The decompressor copies the DTB to __appended_dtb in the kernel: it must
+  # end below the decompressor, which is still running.
+  dtbsize=$(stat -c %s $O/arch/mips/boot/dts/ingenic/hiby-r1.dtb)
+  [ $((0x$dtb + dtbsize)) -le $((zload)) ] || { echo "the DTB copy would overwrite the decompressor"; exit 1; }
+  python3 /r1/tools/mkuimage.py $zload $zentry "Linux-$version r1" $O/vmlinuz-dtb.bin /r1/out/r1-linux.uimage
+  # The kernel slot (mtd1) is 5 MiB.
+  size=$(stat -c %s /r1/out/r1-linux.uimage)
+  [ $size -le 5242880 ] || { echo "out/r1-linux.uimage: $size bytes, over the 5 MiB kernel slot"; exit 1; }
+  echo "out/r1-linux.uimage: $size bytes of 5242880, load $zload, entry $zentry"
 ' sh "${1:-}"
