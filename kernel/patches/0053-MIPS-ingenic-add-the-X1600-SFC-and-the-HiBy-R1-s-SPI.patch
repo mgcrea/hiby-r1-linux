@@ -1,0 +1,132 @@
+From b093bc5c5b1285f73185eff79a1385f74720978c Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Sat, 24 Oct 2026 07:30:24 +0000
+Subject: [PATCH 53/54] MIPS: ingenic: add the X1600 SFC and the HiBy R1's
+ SPI-NAND
+
+The R1's 128 MiB SPI-NAND with stock's partitions, all read-only for now,
+and the 3 MiB at its end that the vendor kernel hides (MAC, serial and
+licence data) as a partition of its own.
+---
+ arch/mips/boot/dts/ingenic/hiby-r1.dts | 78 ++++++++++++++++++++++++++
+ arch/mips/boot/dts/ingenic/x1600.dtsi  | 15 +++++
+ 2 files changed, 93 insertions(+)
+
+diff --git a/arch/mips/boot/dts/ingenic/hiby-r1.dts b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+index 7af7c83..f94ad91 100644
+--- a/arch/mips/boot/dts/ingenic/hiby-r1.dts
++++ b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+@@ -450,6 +450,84 @@ &cgu {
+ 	assigned-clock-rates = <0>, <0>, <300000000>;
+ };
+ 
++/*
++ * The 128 MiB SPI-NAND (stock's partitions). No pinctrl: the boot loader
++ * already set PC17-PC22 up to load the kernel, and pinctrl's "sfc" group
++ * would also take PB4, the Bluetooth chip's power. 37.5 MHz and quad
++ * reads, as Rockbox drives this chip (an SFC clock of 150 MHz).
++ */
++&sfc {
++	status = "okay";
++
++	flash@0 {
++		compatible = "spi-nand";
++		reg = <0>;
++		spi-max-frequency = <37500000>;
++		spi-rx-bus-width = <4>;
++		spi-tx-bus-width = <1>;
++
++		partitions {
++			compatible = "fixed-partitions";
++			#address-cells = <1>;
++			#size-cells = <1>;
++
++			/* Read-only until writing is trusted. */
++			partition@0 {
++				label = "uboot";
++				reg = <0x0 0x80000>;
++				read-only;
++			};
++
++			partition@80000 {
++				label = "kernel";
++				reg = <0x80000 0x500000>;
++				read-only;
++			};
++
++			partition@580000 {
++				label = "rootfs";
++				reg = <0x580000 0x2d00000>;
++				read-only;
++			};
++
++			/* HiBy's recovery system. */
++			partition@3280000 {
++				label = "kernel2";
++				reg = <0x3280000 0x500000>;
++				read-only;
++			};
++
++			partition@3780000 {
++				label = "rootfs2";
++				reg = <0x3780000 0x1800000>;
++				read-only;
++			};
++
++			partition@4f80000 {
++				label = "ota";
++				reg = <0x4f80000 0x80000>;
++				read-only;
++			};
++
++			partition@5000000 {
++				label = "userdata";
++				reg = <0x5000000 0x2d00000>;
++				read-only;
++			};
++
++			/*
++			 * HiBy's MAC, serial number and licence data, which the
++			 * vendor kernel hides from its MTD device.
++			 */
++			partition@7d00000 {
++				label = "hiby";
++				reg = <0x7d00000 0x300000>;
++				read-only;
++			};
++		};
++	};
++};
++
+ &otg_phy {
+ 	status = "okay";
+ };
+diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
+index 2930d28..bfcab4e 100644
+--- a/arch/mips/boot/dts/ingenic/x1600.dtsi
++++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
+@@ -328,6 +328,21 @@ pdma: dma-controller@13420000 {
+ 		clocks = <&cgu X1600_CLK_PDMA>;
+ 	};
+ 
++	sfc: spi@13440000 {
++		compatible = "ingenic,x1600-sfc";
++		reg = <0x13440000 0x10000>;
++
++		interrupt-parent = <&intc>;
++		interrupts = <7>;
++
++		clocks = <&cgu X1600_CLK_SFC>;
++
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		status = "disabled";
++	};
++
+ 	mmc0: mmc@13450000 {
+ 		compatible = "ingenic,x1600-mmc", "ingenic,x1000-mmc";
+ 		reg = <0x13450000 0x10000>;
+-- 
+2.39.5
+

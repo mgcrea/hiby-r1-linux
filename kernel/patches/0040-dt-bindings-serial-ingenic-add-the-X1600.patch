@@ -1,0 +1,28 @@
+From 72808d773db3fefefc22adc379aa421fc0a3ce48 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 20:33:27 +0000
+Subject: [PATCH 40/54] dt-bindings: serial: ingenic: add the X1600
+
+The X1600's UARTs have the X1000's registers (as far as the stock kernel's
+use of them shows): take ingenic,x1600-uart with the X1000's as fallback.
+---
+ Documentation/devicetree/bindings/serial/ingenic,uart.yaml | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/serial/ingenic,uart.yaml b/Documentation/devicetree/bindings/serial/ingenic,uart.yaml
+index d5f153b..635342d 100644
+--- a/Documentation/devicetree/bindings/serial/ingenic,uart.yaml
++++ b/Documentation/devicetree/bindings/serial/ingenic,uart.yaml
+@@ -32,6 +32,9 @@ properties:
+       - items:
+           - const: ingenic,jz4725b-uart
+           - const: ingenic,jz4740-uart
++      - items:
++          - const: ingenic,x1600-uart
++          - const: ingenic,x1000-uart
+       - items:
+           - const: ingenic,jz4755-uart
+           - const: ingenic,jz4750-uart
+-- 
+2.39.5
+

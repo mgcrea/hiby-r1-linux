@@ -1,7 +1,7 @@
-From 1949fa8c60300bf75b0f6280dcc66b503d4211b5 Mon Sep 17 00:00:00 2001
+From 93c0058fe98d2bab29e7efc8e5cf890052ea64fc Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:05:52 +0000
-Subject: [PATCH 29/40] drm/panel: add the HiBy LG35583
+Subject: [PATCH 29/54] drm/panel: add the HiBy LG35583
 
 The 480x800 parallel RGB panel of the HiBy R1. It is set up over a 3-wire SPI
 bus with 16-bit words, each carrying a register address byte or a data byte,
@@ -10,8 +10,8 @@ kernel's.
 ---
  drivers/gpu/drm/panel/Kconfig              |   8 +
  drivers/gpu/drm/panel/Makefile             |   1 +
- drivers/gpu/drm/panel/panel-hiby-lg35583.c | 313 +++++++++++++++++++++
- 3 files changed, 322 insertions(+)
+ drivers/gpu/drm/panel/panel-hiby-lg35583.c | 317 +++++++++++++++++++++
+ 3 files changed, 326 insertions(+)
  create mode 100644 drivers/gpu/drm/panel/panel-hiby-lg35583.c
 
 diff --git a/drivers/gpu/drm/panel/Kconfig b/drivers/gpu/drm/panel/Kconfig
@@ -47,10 +47,10 @@ index 3b523cf..4eb41bf 100644
  obj-$(CONFIG_DRM_PANEL_HIMAX_HX83112A) += panel-himax-hx83112a.o
 diff --git a/drivers/gpu/drm/panel/panel-hiby-lg35583.c b/drivers/gpu/drm/panel/panel-hiby-lg35583.c
 new file mode 100644
-index 0000000..fb6884f
+index 0000000..44b3983
 --- /dev/null
 +++ b/drivers/gpu/drm/panel/panel-hiby-lg35583.c
-@@ -0,0 +1,313 @@
+@@ -0,0 +1,317 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * The LG35583 panel of the HiBy R1
@@ -319,8 +319,12 @@ index 0000000..fb6884f
 +	if (IS_ERR(ctx->vccio))
 +		return dev_err_probe(dev, PTR_ERR(ctx->vccio), "Unable to get vccio\n");
 +
-+	/* Left as it is: the panel may still be on from the boot loader. */
-+	ctx->reset = devm_gpiod_get(dev, "reset", GPIOD_ASIS);
++	/*
++	 * Deasserted, which keeps a panel the boot loader left on as it is, but
++	 * as an output: after a reset the pin is an input, and prepare's reset
++	 * pulse would never reach the panel.
++	 */
++	ctx->reset = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
 +	if (IS_ERR(ctx->reset))
 +		return dev_err_probe(dev, PTR_ERR(ctx->reset), "Unable to get reset\n");
 +

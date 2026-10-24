@@ -1,0 +1,73 @@
+From adc8db3ccd6f9b03709570a269729c3ec2b795bc Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Sat, 24 Oct 2026 04:48:08 +0000
+Subject: [PATCH 49/54] MIPS: ingenic: add the X1600's USB PHY
+
+The PHY as a child of the CGU, for the OTG controller, enabled on the
+HiBy R1.
+---
+ arch/mips/boot/dts/ingenic/hiby-r1.dts |  4 ++++
+ arch/mips/boot/dts/ingenic/x1600.dtsi  | 19 ++++++++++++++++++-
+ 2 files changed, 22 insertions(+), 1 deletion(-)
+
+diff --git a/arch/mips/boot/dts/ingenic/hiby-r1.dts b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+index d1426b5..7af7c83 100644
+--- a/arch/mips/boot/dts/ingenic/hiby-r1.dts
++++ b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+@@ -450,6 +450,10 @@ &cgu {
+ 	assigned-clock-rates = <0>, <0>, <300000000>;
+ };
+ 
++&otg_phy {
++	status = "okay";
++};
++
+ &otg {
+ 	status = "okay";
+ 
+diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
+index a0ccc45..2930d28 100644
+--- a/arch/mips/boot/dts/ingenic/x1600.dtsi
++++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
+@@ -56,13 +56,27 @@ osc32k: osc32k {
+ 	};
+ 
+ 	cgu: clock-controller@10000000 {
+-		compatible = "ingenic,x1600-cgu";
++		compatible = "ingenic,x1600-cgu", "simple-mfd";
+ 		reg = <0x10000000 0x100>;
++		#address-cells = <1>;
++		#size-cells = <1>;
++		ranges = <0x0 0x10000000 0x100>;
+ 
+ 		#clock-cells = <1>;
+ 
+ 		clocks = <&exclk>, <&osc32k>;
+ 		clock-names = "ext", "osc32k";
++
++		otg_phy: usb-phy@3c {
++			compatible = "ingenic,x1600-phy";
++			reg = <0x3c 0x10>;
++
++			clocks = <&cgu X1600_CLK_USBPHY>;
++
++			#phy-cells = <0>;
++
++			status = "disabled";
++		};
+ 	};
+ 
+ 	pinctrl: pin-controller@10010000 {
+@@ -361,6 +375,9 @@ otg: usb@13500000 {
+ 		clocks = <&cgu X1600_CLK_OTG>;
+ 		clock-names = "otg";
+ 
++		phys = <&otg_phy>;
++		phy-names = "usb2-phy";
++
+ 		/* FIFO sizes from the vendor device tree. */
+ 		g-rx-fifo-size = <1096>;
+ 		g-np-tx-fifo-size = <512>;
+-- 
+2.39.5
+

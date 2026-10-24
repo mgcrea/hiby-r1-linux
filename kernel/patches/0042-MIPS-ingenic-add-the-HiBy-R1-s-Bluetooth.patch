@@ -1,0 +1,61 @@
+From c86dee1409bca949d1d9cbb33938838502642a4f Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 20:33:27 +0000
+Subject: [PATCH 42/54] MIPS: ingenic: add the HiBy R1's Bluetooth
+
+The AP6212 module's BCM43430A1 on UART0 with RTS/CTS, powered by PB4, at
+1.5 Mbaud.
+---
+ arch/mips/boot/dts/ingenic/hiby-r1.dts | 29 ++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/arch/mips/boot/dts/ingenic/hiby-r1.dts b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+index c63101c..9da51c5 100644
+--- a/arch/mips/boot/dts/ingenic/hiby-r1.dts
++++ b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+@@ -372,6 +372,29 @@ touchscreen@15 {
+ 	};
+ };
+ 
++/*
++ * The AP6212 module's Bluetooth (a BCM43430A1) on UART0, PB7-PB10 with
++ * RTS/CTS. BT_REG_ON is PB4 and the host's wake line to it PB5, from the
++ * stock kernel's GPIO labels. Its 32 kHz clock comes out on PC26, which the
++ * stock kernel sets up and nothing here touches yet. The stock firmware runs
++ * the link at 3 Mbaud with the UART at 8 clocks a bit (UMR); 8250_ingenic
++ * keeps 16, so 24 MHz / 16 is the limit here.
++ */
++&uart0 {
++	status = "okay";
++
++	pinctrl-names = "default";
++	pinctrl-0 = <&pins_uart0>;
++	uart-has-rtscts;
++
++	bluetooth {
++		compatible = "brcm,bcm43430a1-bt";
++		shutdown-gpios = <&gpb 4 GPIO_ACTIVE_HIGH>;
++		device-wakeup-gpios = <&gpb 5 GPIO_ACTIVE_HIGH>;
++		max-speed = <1500000>;
++	};
++};
++
+ &i2s {
+ 	status = "okay";
+ 
+@@ -462,6 +485,12 @@ pins_pwm0: pwm0 {
+ 		groups = "pwm0";
+ 	};
+ 
++	pins_uart0: uart0 {
++		function = "uart0";
++		groups = "uart0-data", "uart0-hwflow";
++		bias-disable;
++	};
++
+ 	pins_msc1: msc1 {
+ 		function = "mmc1";
+ 		groups = "mmc1-1bit", "mmc1-4bit";
+-- 
+2.39.5
+

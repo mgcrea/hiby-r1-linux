@@ -1,0 +1,57 @@
+From c02b466fbc45b0a7fd75d861cfff5d9d2f297436 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Sat, 24 Oct 2026 04:48:08 +0000
+Subject: [PATCH 48/54] phy: ingenic: add the X1600
+
+Set the PHY up with the values the boot ROM's USB loader leaves, with
+which the HiBy R1's dwc2 gadget enumerates.
+---
+ drivers/phy/ingenic/phy-ingenic-usb.c | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/drivers/phy/ingenic/phy-ingenic-usb.c b/drivers/phy/ingenic/phy-ingenic-usb.c
+index 7e62d46..4b0e66d 100644
+--- a/drivers/phy/ingenic/phy-ingenic-usb.c
++++ b/drivers/phy/ingenic/phy-ingenic-usb.c
+@@ -260,6 +260,19 @@ static void x1000_usb_phy_init(struct phy *phy)
+ 	writel(reg, priv->base + REG_USBPCR_OFFSET);
+ }
+ 
++static void x1600_usb_phy_init(struct phy *phy)
++{
++	struct ingenic_usb_phy *priv = phy_get_drvdata(phy);
++
++	/*
++	 * The values the boot ROM's USB loader leaves, with which the HiBy
++	 * R1's gadget enumerates (Rockbox's port of it uses them too): the
++	 * B-session valid from the register, everything else 0.
++	 */
++	writel(USBPCR1_BVLD_REG, priv->base + REG_USBPCR1_OFFSET);
++	writel(USBPCR_POR, priv->base + REG_USBPCR_OFFSET);
++}
++
+ static void x1830_usb_phy_init(struct phy *phy)
+ {
+ 	struct ingenic_usb_phy *priv = phy_get_drvdata(phy);
+@@ -305,6 +318,10 @@ static const struct ingenic_soc_info x1000_soc_info = {
+ 	.usb_phy_init = x1000_usb_phy_init,
+ };
+ 
++static const struct ingenic_soc_info x1600_soc_info = {
++	.usb_phy_init = x1600_usb_phy_init,
++};
++
+ static const struct ingenic_soc_info x1830_soc_info = {
+ 	.usb_phy_init = x1830_usb_phy_init,
+ };
+@@ -364,6 +381,7 @@ static const struct of_device_id ingenic_usb_phy_of_matches[] = {
+ 	{ .compatible = "ingenic,jz4775-phy", .data = &jz4775_soc_info },
+ 	{ .compatible = "ingenic,jz4780-phy", .data = &jz4780_soc_info },
+ 	{ .compatible = "ingenic,x1000-phy", .data = &x1000_soc_info },
++	{ .compatible = "ingenic,x1600-phy", .data = &x1600_soc_info },
+ 	{ .compatible = "ingenic,x1830-phy", .data = &x1830_soc_info },
+ 	{ .compatible = "ingenic,x2000-phy", .data = &x2000_soc_info },
+ 	{ /* sentinel */ }
+-- 
+2.39.5
+

@@ -1,0 +1,107 @@
+From b61010fe5736789a941d90606ee19b6d4f696d0c Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Sat, 24 Oct 2026 04:48:08 +0000
+Subject: [PATCH 46/54] clk: ingenic: x1600: take the USB PHY out of suspend
+
+Besides its clock gate (OPCR bit 23), the X1600's USB PHY has, as the
+X1000's, a suspend control in OPCR (SPENDN0). After a reset the PHY is
+gated and suspended. The boot ROM's USB loader and the vendor kernel turn
+both on, so USB worked as long as one of them ran first; started straight
+from flash, the HiBy R1 had no USB. Turn both on with the clock.
+---
+ drivers/clk/ingenic/x1600-cgu.c | 64 +++++++++++++++++++++++++++++++--
+ 1 file changed, 62 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/clk/ingenic/x1600-cgu.c b/drivers/clk/ingenic/x1600-cgu.c
+index 40d45d3..d4a86c4 100644
+--- a/drivers/clk/ingenic/x1600-cgu.c
++++ b/drivers/clk/ingenic/x1600-cgu.c
+@@ -10,6 +10,7 @@
+ 
+ #include <linux/bitfield.h>
+ #include <linux/clk-provider.h>
++#include <linux/delay.h>
+ #include <linux/io.h>
+ #include <linux/of.h>
+ #include <linux/rational.h>
+@@ -170,6 +171,65 @@ static const struct clk_ops x1600_i2s_ops = {
+ /* Dividers in the CDR registers: change enable 29, busy 28, stop 27. */
+ #define X1600_CDR(_reg, _div, _bits) { _reg, 0, _div, _bits, 29, 28, 27 }
+ 
++/*
++ * The USB PHY's clock gate is OPCR bit 23 (set to stop it) and, as on the
++ * X1000, OPCR's SPENDN0 takes the PHY out of suspend. After a reset the
++ * PHY is gated and suspended; the boot ROM's USB loader and the vendor
++ * kernel turn both on, and nothing else here did.
++ */
++#define OPCR_GATE_USBPHY	BIT(23)
++#define OPCR_SPENDN0		BIT(7)
++
++static unsigned long x1600_usb_phy_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
++{
++	return parent_rate;
++}
++
++static int x1600_usb_phy_enable(struct clk_hw *hw)
++{
++	struct ingenic_cgu *cgu = to_ingenic_clk(hw)->cgu;
++	unsigned long flags;
++	u32 opcr;
++
++	spin_lock_irqsave(&cgu->lock, flags);
++	opcr = readl(cgu->base + CGU_REG_OPCR);
++	writel((opcr & ~OPCR_GATE_USBPHY) | OPCR_SPENDN0, cgu->base + CGU_REG_OPCR);
++	spin_unlock_irqrestore(&cgu->lock, flags);
++
++	/* Time to leave suspend, as Rockbox's HiBy R1 port allows. */
++	udelay(45);
++	return 0;
++}
++
++static void x1600_usb_phy_disable(struct clk_hw *hw)
++{
++	struct ingenic_cgu *cgu = to_ingenic_clk(hw)->cgu;
++	unsigned long flags;
++	u32 opcr;
++
++	spin_lock_irqsave(&cgu->lock, flags);
++	opcr = readl(cgu->base + CGU_REG_OPCR);
++	writel(opcr & ~OPCR_SPENDN0, cgu->base + CGU_REG_OPCR);
++	udelay(5);
++	writel((opcr & ~OPCR_SPENDN0) | OPCR_GATE_USBPHY, cgu->base + CGU_REG_OPCR);
++	spin_unlock_irqrestore(&cgu->lock, flags);
++}
++
++static int x1600_usb_phy_is_enabled(struct clk_hw *hw)
++{
++	struct ingenic_cgu *cgu = to_ingenic_clk(hw)->cgu;
++	u32 opcr = readl(cgu->base + CGU_REG_OPCR);
++
++	return !(opcr & OPCR_GATE_USBPHY) && (opcr & OPCR_SPENDN0);
++}
++
++static const struct clk_ops x1600_usb_phy_ops = {
++	.recalc_rate = x1600_usb_phy_recalc_rate,
++	.enable = x1600_usb_phy_enable,
++	.disable = x1600_usb_phy_disable,
++	.is_enabled = x1600_usb_phy_is_enabled,
++};
++
+ static const struct ingenic_cgu_clk_info x1600_cgu_clocks[] = {
+ 
+ 	/* External clocks */
+@@ -461,9 +521,9 @@ static const struct ingenic_cgu_clk_info x1600_cgu_clocks[] = {
+ 		.gate = { CGU_REG_CLKGR0, 27 },
+ 	},
+ 	[X1600_CLK_USBPHY] = {
+-		"usb_phy", CGU_CLK_GATE,
++		"usb_phy", CGU_CLK_CUSTOM,
+ 		.parents = { X1600_CLK_PCLK, -1, -1, -1 },
+-		.gate = { CGU_REG_OPCR, 23 },
++		.custom = { &x1600_usb_phy_ops },
+ 	},
+ };
+ 
+-- 
+2.39.5
+

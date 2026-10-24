@@ -1,0 +1,26 @@
+From 114c8669bb0332a10efb3804b76dcc42068312b9 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Sat, 24 Oct 2026 04:48:08 +0000
+Subject: [PATCH 47/54] dt-bindings: phy: ingenic: add the X1600
+
+The X1600's USB PHY control registers sit in its CGU at 0x3c, as on the
+X1830.
+---
+ Documentation/devicetree/bindings/phy/ingenic,phy-usb.yaml | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Documentation/devicetree/bindings/phy/ingenic,phy-usb.yaml b/Documentation/devicetree/bindings/phy/ingenic,phy-usb.yaml
+index 30b4200..b002dea 100644
+--- a/Documentation/devicetree/bindings/phy/ingenic,phy-usb.yaml
++++ b/Documentation/devicetree/bindings/phy/ingenic,phy-usb.yaml
+@@ -20,6 +20,7 @@ properties:
+       - ingenic,jz4775-phy
+       - ingenic,jz4780-phy
+       - ingenic,x1000-phy
++      - ingenic,x1600-phy
+       - ingenic,x1830-phy
+       - ingenic,x2000-phy
+ 
+-- 
+2.39.5
+

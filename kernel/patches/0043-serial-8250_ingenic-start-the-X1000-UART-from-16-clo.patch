@@ -1,0 +1,65 @@
+From 0b6e2d5ca4694d199b9bad7d655dceda3bcdee3e Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 20:38:50 +0000
+Subject: [PATCH 43/54] serial: 8250_ingenic: start the X1000 UART from 16
+ clocks a bit
+
+The X1000 UART counts UMR clocks a bit, adjusted by UACR, and the divisor
+the 8250 core computes assumes 16. The driver never sets them, so it keeps
+whatever ran before: after the HiBy R1's vendor kernel (X1600), UMR is 8 and
+every rate comes out twice what was asked. Reset both at probe.
+---
+ drivers/tty/serial/8250/8250_ingenic.c | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/drivers/tty/serial/8250/8250_ingenic.c b/drivers/tty/serial/8250/8250_ingenic.c
+index 94542fc..a5abe48 100644
+--- a/drivers/tty/serial/8250/8250_ingenic.c
++++ b/drivers/tty/serial/8250/8250_ingenic.c
+@@ -24,6 +24,7 @@
+ struct ingenic_uart_config {
+ 	int tx_loadsz;
+ 	int fifosize;
++	bool has_umr;
+ };
+ 
+ struct ingenic_uart_data {
+@@ -39,6 +40,10 @@ static const struct of_device_id of_match[];
+ #define UART_MCR_MDCE	BIT(7)
+ #define UART_MCR_FCM	BIT(6)
+ 
++/* Clocks per bit, 16 at reset, and the per-bit adjustment of that count. */
++#define UART_UMR	9
++#define UART_UACR	10
++
+ static struct earlycon_device *early_device;
+ 
+ static uint8_t early_in(struct uart_port *port, int offset)
+@@ -297,6 +302,16 @@ static int ingenic_uart_probe(struct platform_device *pdev)
+ 	}
+ 	uart.port.uartclk = clk_get_rate(data->clk_baud);
+ 
++	/*
++	 * The divisor the 8250 core computes assumes 16 clocks a bit. Whatever
++	 * ran before may have left fewer, or an adjustment: the HiBy R1's
++	 * vendor kernel leaves 8, which doubled every rate set here.
++	 */
++	if (cdata->has_umr) {
++		writel(16, uart.port.membase + (UART_UMR << uart.port.regshift));
++		writel(0, uart.port.membase + (UART_UACR << uart.port.regshift));
++	}
++
+ 	data->line = serial8250_register_8250_port(&uart);
+ 	if (data->line < 0) {
+ 		err = data->line;
+@@ -341,6 +356,7 @@ static const struct ingenic_uart_config jz4780_uart_config = {
+ static const struct ingenic_uart_config x1000_uart_config = {
+ 	.tx_loadsz = 32,
+ 	.fifosize = 64,
++	.has_umr = true,
+ };
+ 
+ static const struct of_device_id of_match[] = {
+-- 
+2.39.5
+

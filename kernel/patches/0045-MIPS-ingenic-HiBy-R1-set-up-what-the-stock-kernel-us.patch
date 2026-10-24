@@ -1,0 +1,95 @@
+From f5cc3b3014870496c9cb6b851d0e355c8efb6217 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Sat, 24 Oct 2026 04:01:44 +0000
+Subject: [PATCH 45/54] MIPS: ingenic: HiBy R1: set up what the stock kernel
+ used to
+
+Booted without the stock kernel first (from the boot ROM's USB mode), the
+SD card stayed unpowered (PC25 has a pull-down), the PWM, LCD and MSC1
+clocks ran from their reset parent, SCLK_A, and the Bluetooth chip had
+no 32 kHz clock. Power the card slot through a regulator, give the three
+clocks the parents the stock kernel set, and put PC26 on its clock
+output.
+---
+ arch/mips/boot/dts/ingenic/hiby-r1.dts | 39 ++++++++++++++++++++++++++
+ 1 file changed, 39 insertions(+)
+
+diff --git a/arch/mips/boot/dts/ingenic/hiby-r1.dts b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+index 9da51c5..d1426b5 100644
+--- a/arch/mips/boot/dts/ingenic/hiby-r1.dts
++++ b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+@@ -157,6 +157,21 @@ vdac: regulator-dac {
+ 		startup-delay-us = <10000>;
+ 	};
+ 
++	/*
++	 * PC25 switches the SD card slot's power. It has a pull-down: after a
++	 * reset the card is off until something drives it high, which the
++	 * stock kernel did.
++	 */
++	vmmc: regulator-sd {
++		compatible = "regulator-fixed";
++		regulator-name = "sd";
++		regulator-min-microvolt = <3300000>;
++		regulator-max-microvolt = <3300000>;
++		gpio = <&gpc 25 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		startup-delay-us = <1000>;
++	};
++
+ 	/* The DAC's bus is bit-banged, as on the stock firmware. */
+ 	i2c-dac {
+ 		compatible = "i2c-gpio";
+@@ -389,6 +404,9 @@ &uart0 {
+ 
+ 	bluetooth {
+ 		compatible = "brcm,bcm43430a1-bt";
++		/* Its 32 kHz sleep clock, which the chip needs to run. */
++		pinctrl-names = "default";
++		pinctrl-0 = <&pins_rtc32k>;
+ 		shutdown-gpios = <&gpb 4 GPIO_ACTIVE_HIGH>;
+ 		device-wakeup-gpios = <&gpb 5 GPIO_ACTIVE_HIGH>;
+ 		max-speed = <1500000>;
+@@ -409,6 +427,7 @@ &mmc1 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&pins_msc1>;
+ 
++	vmmc-supply = <&vmmc>;
+ 	bus-width = <4>;
+ 	max-frequency = <50000000>;
+ 	cap-sd-highspeed;
+@@ -416,6 +435,21 @@ &mmc1 {
+ 	broken-cd;
+ };
+ 
++/*
++ * The parents the stock kernel gave these clocks; after a reset they run
++ * from SCLK_A (1104 MHz), and the backlight flickers. Set here rather than
++ * in the consumers, since the CGU can't switch these muxes while a clock
++ * is on, and simple-framebuffer holds the LCD's from early on. The rate
++ * makes the CGU write PWM's divider with its change enable.
++ */
++&cgu {
++	assigned-clocks = <&cgu X1600_CLK_LCD>, <&cgu X1600_CLK_MSC1>,
++			  <&cgu X1600_CLK_PWM>;
++	assigned-clock-parents = <&cgu X1600_CLK_MPLL>, <&cgu X1600_CLK_MPLL>,
++				 <&cgu X1600_CLK_EPLL>;
++	assigned-clock-rates = <0>, <0>, <300000000>;
++};
++
+ &otg {
+ 	status = "okay";
+ 
+@@ -496,4 +530,9 @@ pins_msc1: msc1 {
+ 		groups = "mmc1-1bit", "mmc1-4bit";
+ 		bias-disable;
+ 	};
++
++	pins_rtc32k: rtc32k {
++		function = "rtc32k";
++		groups = "rtc32k";
++	};
+ };
+-- 
+2.39.5
+
