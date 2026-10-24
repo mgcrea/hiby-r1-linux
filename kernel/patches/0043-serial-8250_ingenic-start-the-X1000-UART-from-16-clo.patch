@@ -1,7 +1,7 @@
 From 0b6e2d5ca4694d199b9bad7d655dceda3bcdee3e Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 20:38:50 +0000
-Subject: [PATCH 43/54] serial: 8250_ingenic: start the X1000 UART from 16
+Subject: [PATCH 43/55] serial: 8250_ingenic: start the X1000 UART from 16
  clocks a bit
 
 The X1000 UART counts UMR clocks a bit, adjusted by UACR, and the divisor

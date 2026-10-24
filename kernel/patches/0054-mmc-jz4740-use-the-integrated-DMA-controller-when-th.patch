@@ -1,0 +1,354 @@
+From 5786784c4204832e44995f07b3d51d2e33e31901 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Sat, 24 Oct 2026 10:19:16 +0000
+Subject: [PATCH 54/55] mmc: jz4740: use the integrated DMA controller when
+ there is no other
+
+From the JZ4780 on, the MSC has a DMA controller of its own, which walks
+a chain of descriptors (next, address, length, command) and is selected
+with DMA_SEL clear in DMAC. The X1600 has no external DMA request lines
+for its MSCs (Ingenic's own kernel uses the integrated controller), so
+the driver fell back to PIO there, which takes the CPU for every word.
+
+Use the integrated controller on the X1000 and later when the device
+tree gives no DMA channels: one descriptor per scatterlist segment, up to
+64 KiB each, started right after the command. A write is complete once
+the transfer is done, as before. A read needs its last words in memory,
+and on the X1600 no flag says so reliably: DMA_DATA_DONE never comes,
+and DMAEND came for an 8-byte read but not for the 64-byte one after it,
+whose address and remaining length had both run out. So a read is done
+when the DMA address reaches the end of the last segment with nothing
+left, or on DMAEND. Buffers that aren't word-aligned still go through
+PIO. Device trees that name external channels keep using them.
+
+On the HiBy R1 (X1600, an SDHC card at 50 MHz, 4-bit), reads go from 17.3
+to 22.5 MB/s and writes from 13.9 to 18.2 MB/s, with the CPU free; as a
+USB mass storage gadget, writes from a computer from 4.4 to 10.7 MB/s.
+---
+ drivers/mmc/host/jz4740_mmc.c | 167 ++++++++++++++++++++++++++++++++--
+ 1 file changed, 159 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/mmc/host/jz4740_mmc.c b/drivers/mmc/host/jz4740_mmc.c
+index 6a3c26b..1709720 100644
+--- a/drivers/mmc/host/jz4740_mmc.c
++++ b/drivers/mmc/host/jz4740_mmc.c
+@@ -24,6 +24,7 @@
+ #include <linux/property.h>
+ #include <linux/regulator/consumer.h>
+ #include <linux/scatterlist.h>
++#include <linux/sizes.h>
+ 
+ #include <asm/cacheflush.h>
+ 
+@@ -45,6 +46,9 @@
+ #define JZ_REG_MMC_TXFIFO	0x3C
+ #define JZ_REG_MMC_LPM		0x40
+ #define JZ_REG_MMC_DMAC		0x44
++#define JZ_REG_MMC_DMANDA	0x48
++#define JZ_REG_MMC_DMADA	0x4C
++#define JZ_REG_MMC_DMALEN	0x50
+ 
+ #define JZ_MMC_STRPCL_EXIT_MULTIPLE BIT(7)
+ #define JZ_MMC_STRPCL_EXIT_TRANSFER BIT(6)
+@@ -93,6 +97,7 @@
+ #define JZ_MMC_CMDAT_RSP_R2 2
+ #define JZ_MMC_CMDAT_RSP_R3 3
+ 
++#define JZ_MMC_IRQ_DMAEND BIT(16)
+ #define JZ_MMC_IRQ_SDIO BIT(7)
+ #define JZ_MMC_IRQ_TXFIFO_WR_REQ BIT(6)
+ #define JZ_MMC_IRQ_RXFIFO_RD_REQ BIT(5)
+@@ -103,6 +108,11 @@
+ #define JZ_MMC_DMAC_DMA_SEL BIT(1)
+ #define JZ_MMC_DMAC_DMA_EN BIT(0)
+ 
++/* A descriptor of the integrated DMA controller; dcmd bits */
++#define JZ_MMC_DESC_LINK BIT(0)
++#define JZ_MMC_DESC_ENDI BIT(1)
++#define JZ_MMC_DESC_MAX_LEN SZ_64K
++
+ #define	JZ_MMC_LPM_DRV_RISING BIT(31)
+ #define	JZ_MMC_LPM_DRV_RISING_QTR_PHASE_DLY BIT(31)
+ #define	JZ_MMC_LPM_DRV_RISING_1NS_DLY BIT(30)
+@@ -140,6 +150,13 @@ enum jz4740_mmc_state {
+  * COOKIE_MAPPED: the request was mapped in the irq handler,
+  * and should be unmapped before mmc_request_done is called..
+  */
++struct jz4740_mmc_desc {
++	__le32 next;
++	__le32 addr;
++	__le32 len;
++	__le32 cmd;
++};
++
+ enum jz4780_cookie {
+ 	COOKIE_UNMAPPED = 0,
+ 	COOKIE_PREMAPPED,
+@@ -179,6 +196,18 @@ struct jz4740_mmc_host {
+ 	struct dma_chan *dma_tx;
+ 	bool use_dma;
+ 
++	/*
++	 * The integrated DMA controller (the JZ4780 has one too; it is used
++	 * from the X1000 on) when the device tree gives no external DMA
++	 * channels; idma_active is set for a request it carries.
++	 */
++	bool use_idma;
++	bool idma_active;
++	struct jz4740_mmc_desc *descs;
++	dma_addr_t descs_dma;
++	/* Where the integrated DMA's address ends up when it is done */
++	u32 idma_end;
++
+ /* The DMA trigger level is 8 words, that is to say, the DMA read
+  * trigger is when data words in MSC_RXFIFO is >= 8 and the DMA write
+  * trigger is when data words in MSC_TXFIFO is < 8.
+@@ -283,13 +312,22 @@ static inline struct dma_chan *jz4740_mmc_get_dma_chan(struct jz4740_mmc_host *h
+ 		return host->dma_tx;
+ }
+ 
++/* The device that maps buffers: the DMA engine's, or ours for the integrated one */
++static struct device *jz4740_mmc_dma_dev(struct jz4740_mmc_host *host,
++					 struct mmc_data *data)
++{
++	if (host->use_idma)
++		return mmc_dev(host->mmc);
++
++	return jz4740_mmc_get_dma_chan(host, data)->device->dev;
++}
++
+ static void jz4740_mmc_dma_unmap(struct jz4740_mmc_host *host,
+ 				 struct mmc_data *data)
+ {
+-	struct dma_chan *chan = jz4740_mmc_get_dma_chan(host, data);
+ 	enum dma_data_direction dir = mmc_get_dma_dir(data);
+ 
+-	dma_unmap_sg(chan->device->dev, data->sg, data->sg_len, dir);
++	dma_unmap_sg(jz4740_mmc_dma_dev(host, data), data->sg, data->sg_len, dir);
+ 	data->host_cookie = COOKIE_UNMAPPED;
+ }
+ 
+@@ -300,14 +338,13 @@ static int jz4740_mmc_prepare_dma_data(struct jz4740_mmc_host *host,
+ 				       struct mmc_data *data,
+ 				       int cookie)
+ {
+-	struct dma_chan *chan = jz4740_mmc_get_dma_chan(host, data);
+ 	enum dma_data_direction dir = mmc_get_dma_dir(data);
+ 	unsigned int sg_count;
+ 
+ 	if (data->host_cookie == COOKIE_PREMAPPED)
+ 		return data->sg_count;
+ 
+-	sg_count = dma_map_sg(chan->device->dev,
++	sg_count = dma_map_sg(jz4740_mmc_dma_dev(host, data),
+ 			data->sg,
+ 			data->sg_len,
+ 			dir);
+@@ -371,13 +408,96 @@ static int jz4740_mmc_start_dma_transfer(struct jz4740_mmc_host *host,
+ 	return -ENOMEM;
+ }
+ 
++/*
++ * The integrated DMA controller moves whole words from word-aligned
++ * addresses; other buffers (none the block layer hands us) go through PIO.
++ */
++static bool jz4740_mmc_idma_can(struct jz4740_mmc_host *host,
++				struct mmc_data *data)
++{
++	struct scatterlist *sg;
++	int i;
++
++	if (!host->use_idma)
++		return false;
++
++	for_each_sg(data->sg, sg, data->sg_len, i)
++		if ((sg->offset | sg->length) & 3)
++			return false;
++
++	return true;
++}
++
++/* Maps the request's buffers and chains one descriptor per segment */
++static int jz4740_mmc_idma_prepare(struct jz4740_mmc_host *host,
++				   struct mmc_data *data)
++{
++	struct scatterlist *sg;
++	int i, sg_count;
++
++	sg_count = jz4740_mmc_prepare_dma_data(host, data, COOKIE_MAPPED);
++	if (sg_count < 0)
++		return sg_count;
++
++	for_each_sg(data->sg, sg, sg_count, i) {
++		struct jz4740_mmc_desc *desc = &host->descs[i];
++		bool last = i == sg_count - 1;
++
++		desc->next = cpu_to_le32(last ? 0 : host->descs_dma + (i + 1) * sizeof(*desc));
++		desc->addr = cpu_to_le32(sg_dma_address(sg));
++		desc->len = cpu_to_le32(sg_dma_len(sg));
++		desc->cmd = cpu_to_le32(last ? JZ_MMC_DESC_ENDI : JZ_MMC_DESC_LINK);
++		if (last)
++			host->idma_end = sg_dma_address(sg) + sg_dma_len(sg);
++	}
++	/* The descriptors are coherent memory; order them before the start */
++	wmb();
++
++	return 0;
++}
++
++/*
++ * The card's data is in (DATA_TRAN_DONE); wait for the integrated DMA to
++ * have written the last of it to memory. On the X1600 neither of its flags
++ * says so reliably: DMA_DATA_DONE (bit 31, which Rockbox waits for on the
++ * X1000) never comes, and DMAEND came for an 8-byte read but not for the
++ * 64-byte one after it, whose address and length had both run out. So it
++ * is done when the address has reached the end of the last segment with
++ * nothing left of it, or on DMAEND.
++ */
++static bool jz4740_mmc_idma_read_done(struct jz4740_mmc_host *host)
++{
++	if (jz4740_mmc_read_irq_reg(host) & JZ_MMC_IRQ_DMAEND)
++		return true;
++
++	return readl(host->base + JZ_REG_MMC_DMADA) == host->idma_end &&
++	       readl(host->base + JZ_REG_MMC_DMALEN) == 0;
++}
++
++static void jz4740_mmc_idma_wait_read(struct jz4740_mmc_host *host,
++				      struct mmc_data *data)
++{
++	unsigned int timeout = 10000;
++
++	while (!jz4740_mmc_idma_read_done(host) && --timeout)
++		udelay(1);
++
++	if (!timeout && !data->error) {
++		dev_err(mmc_dev(host->mmc), "DMA did not finish a read\n");
++		data->error = -EIO;
++	}
++}
++
+ static void jz4740_mmc_pre_request(struct mmc_host *mmc,
+ 				   struct mmc_request *mrq)
+ {
+ 	struct jz4740_mmc_host *host = mmc_priv(mmc);
+ 	struct mmc_data *data = mrq->data;
+ 
+-	if (!host->use_dma)
++	if (host->use_idma && !jz4740_mmc_idma_can(host, data))
++		return;
++
++	if (!host->use_dma && !host->use_idma)
+ 		return;
+ 
+ 	data->host_cookie = COOKIE_UNMAPPED;
+@@ -395,7 +515,7 @@ static void jz4740_mmc_post_request(struct mmc_host *mmc,
+ 	if (data && data->host_cookie != COOKIE_UNMAPPED)
+ 		jz4740_mmc_dma_unmap(host, data);
+ 
+-	if (err) {
++	if (err && host->use_dma) {
+ 		struct dma_chan *chan = jz4740_mmc_get_dma_chan(host, data);
+ 
+ 		dmaengine_terminate_all(chan);
+@@ -462,6 +582,11 @@ static void jz4740_mmc_request_done(struct jz4740_mmc_host *host)
+ 	data = req->data;
+ 	host->req = NULL;
+ 
++	if (host->idma_active) {
++		writel(0, host->base + JZ_REG_MMC_DMAC);
++		host->idma_active = false;
++	}
++
+ 	if (data && data->host_cookie == COOKIE_MAPPED)
+ 		jz4740_mmc_dma_unmap(host, data);
+ 	mmc_request_done(host->mmc, req);
+@@ -680,6 +805,7 @@ static void jz4740_mmc_send_command(struct jz4740_mmc_host *host,
+ 	struct mmc_command *cmd)
+ {
+ 	uint32_t cmdat = host->cmdat;
++	bool idma = false;
+ 
+ 	host->cmdat &= ~JZ_MMC_CMDAT_INIT;
+ 	jz4740_mmc_clock_disable(host);
+@@ -726,6 +852,11 @@ static void jz4740_mmc_send_command(struct jz4740_mmc_host *host,
+ 			}
+ 		} else if (host->version >= JZ_MMC_JZ4780) {
+ 			writel(0, host->base + JZ_REG_MMC_DMAC);
++			idma = jz4740_mmc_idma_can(host, cmd->data) &&
++			       !jz4740_mmc_idma_prepare(host, cmd->data);
++			if (idma)
++				writel(host->descs_dma, host->base + JZ_REG_MMC_DMANDA);
++			host->idma_active = idma;
+ 		}
+ 
+ 		writew(cmd->data->blksz, host->base + JZ_REG_MMC_BLKLEN);
+@@ -737,6 +868,10 @@ static void jz4740_mmc_send_command(struct jz4740_mmc_host *host,
+ 	writel(cmdat, host->base + JZ_REG_MMC_CMDAT);
+ 
+ 	jz4740_mmc_clock_enable(host, 1);
++
++	/* Started after the command, as Ingenic's own drivers do */
++	if (idma)
++		writel(JZ_MMC_DMAC_DMA_EN, host->base + JZ_REG_MMC_DMAC);
+ }
+ 
+ static void jz_mmc_prepare_data_transfer(struct jz4740_mmc_host *host)
+@@ -786,6 +921,9 @@ static irqreturn_t jz_mmc_irq_worker(int irq, void *devid)
+ 			 */
+ 			timeout = jz4740_mmc_start_dma_transfer(host, data);
+ 			data->bytes_xfered = data->blocks * data->blksz;
++		} else if (host->idma_active) {
++			/* Running since the command started */
++			data->bytes_xfered = data->blocks * data->blksz;
+ 		} else if (data->flags & MMC_DATA_READ)
+ 			/* Use PIO if DMA is not enabled.
+ 			 * Data transfer direction was defined before
+@@ -812,6 +950,9 @@ static irqreturn_t jz_mmc_irq_worker(int irq, void *devid)
+ 		fallthrough;
+ 
+ 	case JZ4740_MMC_STATE_SEND_STOP:
++		if (host->idma_active && (data->flags & MMC_DATA_READ))
++			jz4740_mmc_idma_wait_read(host, data);
++
+ 		if (!req->stop)
+ 			break;
+ 
+@@ -850,7 +991,8 @@ static irqreturn_t jz_mmc_irq(int irq, void *devid)
+ 	irq_reg &= ~host->irq_mask;
+ 
+ 	tmp &= ~(JZ_MMC_IRQ_TXFIFO_WR_REQ | JZ_MMC_IRQ_RXFIFO_RD_REQ |
+-		JZ_MMC_IRQ_PRG_DONE | JZ_MMC_IRQ_DATA_TRAN_DONE);
++		JZ_MMC_IRQ_PRG_DONE | JZ_MMC_IRQ_DATA_TRAN_DONE |
++		JZ_MMC_IRQ_DMAEND);
+ 
+ 	if (tmp != irq_reg)
+ 		jz4740_mmc_write_irq_reg(host, tmp & ~irq_reg);
+@@ -1123,6 +1265,15 @@ static int jz4740_mmc_probe(struct platform_device* pdev)
+ 		goto err_free_irq;
+ 	host->use_dma = !ret;
+ 
++	if (!host->use_dma && host->version >= JZ_MMC_X1000) {
++		host->descs = dmam_alloc_coherent(&pdev->dev,
++						  mmc->max_segs * sizeof(*host->descs),
++						  &host->descs_dma, GFP_KERNEL);
++		host->use_idma = host->descs != NULL;
++		if (host->use_idma)
++			mmc->max_seg_size = JZ_MMC_DESC_MAX_LEN;
++	}
++
+ 	platform_set_drvdata(pdev, host);
+ 	ret = mmc_add_host(mmc);
+ 
+@@ -1133,7 +1284,7 @@ static int jz4740_mmc_probe(struct platform_device* pdev)
+ 	dev_info(&pdev->dev, "Ingenic SD/MMC card driver registered\n");
+ 
+ 	dev_info(&pdev->dev, "Using %s, %d-bit mode\n",
+-		 host->use_dma ? "DMA" : "PIO",
++		 host->use_dma ? "DMA" : host->use_idma ? "integrated DMA" : "PIO",
+ 		 (mmc->caps & MMC_CAP_8_BIT_DATA) ? 8 :
+ 		 ((mmc->caps & MMC_CAP_4_BIT_DATA) ? 4 : 1));
+ 
+-- 
+2.39.5
+

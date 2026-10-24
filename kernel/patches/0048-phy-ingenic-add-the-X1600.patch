@@ -1,7 +1,7 @@
 From c02b466fbc45b0a7fd75d861cfff5d9d2f297436 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 04:48:08 +0000
-Subject: [PATCH 48/54] phy: ingenic: add the X1600
+Subject: [PATCH 48/55] phy: ingenic: add the X1600
 
 Set the PHY up with the values the boot ROM's USB loader leaves, with
 which the HiBy R1's dwc2 gadget enumerates.

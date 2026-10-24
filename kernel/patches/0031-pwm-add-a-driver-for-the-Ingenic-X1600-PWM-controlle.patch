@@ -1,7 +1,7 @@
 From a01f17612b96abf4f0c3047f22422a9a2a84c763 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:10:36 +0000
-Subject: [PATCH 31/54] pwm: add a driver for the Ingenic X1600 PWM controller
+Subject: [PATCH 31/55] pwm: add a driver for the Ingenic X1600 PWM controller
 
 The X1600 has a PWM controller of its own, separate from the TCU timers that
 pwm-jz4740 drives on earlier Ingenic SoCs: eight channels, each with a

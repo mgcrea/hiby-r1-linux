@@ -1,7 +1,7 @@
 From 8811ea784376f1f8b6d6492ceecf0c19fb4df46c Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 11:18:15 +0000
-Subject: [PATCH 33/54] ASoC: cs43130: mute the PCM path from hw_free to
+Subject: [PATCH 33/55] ASoC: cs43130: mute the PCM path from hw_free to
  prepare
 
 The PCM path is unmuted when DAPM powers it up and muted again only when

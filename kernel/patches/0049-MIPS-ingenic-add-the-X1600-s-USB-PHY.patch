@@ -1,7 +1,7 @@
 From adc8db3ccd6f9b03709570a269729c3ec2b795bc Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 04:48:08 +0000
-Subject: [PATCH 49/54] MIPS: ingenic: add the X1600's USB PHY
+Subject: [PATCH 49/55] MIPS: ingenic: add the X1600's USB PHY
 
 The PHY as a child of the CGU, for the OTG controller, enabled on the
 HiBy R1.

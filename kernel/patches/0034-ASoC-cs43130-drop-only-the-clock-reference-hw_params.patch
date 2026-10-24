@@ -1,7 +1,7 @@
 From 209a96fa0ad4fbe48db05bffe830a00de67e4221 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 11:34:38 +0000
-Subject: [PATCH 34/54] ASoC: cs43130: drop only the clock reference hw_params
+Subject: [PATCH 34/55] ASoC: cs43130: drop only the clock reference hw_params
  took
 
 hw_params() takes a reference on the internal MCLK and hw_free() drops one,

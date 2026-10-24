@@ -1,7 +1,7 @@
 From cd0f4b8edab8b375d135e0c492263935c145e68e Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:20:53 +0000
-Subject: [PATCH 10/54] ASoC: jz4740-i2s: add the X1600
+Subject: [PATCH 10/55] ASoC: jz4740-i2s: add the X1600
 
 The X1600's AIC is the X1000's, but its I2SDIV holds the bit clock
 divider itself, not the divider minus one, and drops the lowest bit of

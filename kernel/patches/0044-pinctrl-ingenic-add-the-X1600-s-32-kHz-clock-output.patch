@@ -1,7 +1,7 @@
 From 29b4dc6c2be72401e33d4f86dc45da25a0975cdc Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 04:01:44 +0000
-Subject: [PATCH 44/54] pinctrl: ingenic: add the X1600's 32 kHz clock output
+Subject: [PATCH 44/55] pinctrl: ingenic: add the X1600's 32 kHz clock output
 
 PC26's function 0 puts out the RTC's 32 kHz clock, which the HiBy R1's
 Bluetooth chip needs as its sleep clock. The stock device tree calls the

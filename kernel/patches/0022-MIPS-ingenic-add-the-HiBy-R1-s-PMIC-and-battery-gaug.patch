@@ -1,7 +1,7 @@
 From bd861987ddd9809fd1c265057b735d25392f8765 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:59:44 +0000
-Subject: [PATCH 22/54] MIPS: ingenic: add the HiBy R1's PMIC and battery gauge
+Subject: [PATCH 22/55] MIPS: ingenic: add the HiBy R1's PMIC and battery gauge
 
 I2C0 on PA28/PA29 carries the AXP2101 PMIC at 0x34 and the CW2015 fuel
 gauge at 0x62, with the battery profile of the stock firmware.
