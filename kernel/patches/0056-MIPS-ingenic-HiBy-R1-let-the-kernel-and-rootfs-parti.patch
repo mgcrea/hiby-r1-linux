@@ -1,7 +1,7 @@
-From 6fce6615f6bf9f753a18c2d08c577e604b21e4d9 Mon Sep 17 00:00:00 2001
+From 62fc5e8a8113c8c05b9940c0f335db6b2ad969c0 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sun, 25 Oct 2026 08:16:14 +0000
-Subject: [PATCH 56/60] MIPS: ingenic: HiBy R1: let the kernel and rootfs
+Subject: [PATCH 56/61] MIPS: ingenic: HiBy R1: let the kernel and rootfs
  partitions be written
 
 The flash kernel is updated from mainline now, and the root filesystem

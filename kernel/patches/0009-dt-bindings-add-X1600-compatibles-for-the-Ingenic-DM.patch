@@ -1,7 +1,7 @@
 From 9ac7e4a00553a4cd3d6565dc5b143c06e1bbb3a1 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:02:43 +0000
-Subject: [PATCH 09/60] dt-bindings: add X1600 compatibles for the Ingenic DMA,
+Subject: [PATCH 09/61] dt-bindings: add X1600 compatibles for the Ingenic DMA,
  I2C and I2S
 
 The X1600's DMA controller works as the X1830's, and its I2C controller

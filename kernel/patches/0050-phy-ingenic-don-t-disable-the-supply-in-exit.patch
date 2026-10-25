@@ -1,7 +1,7 @@
 From 4e9351e6e27c1ed76ca201d74c511e4a558aec82 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 05:06:37 +0000
-Subject: [PATCH 50/60] phy: ingenic: don't disable the supply in exit
+Subject: [PATCH 50/61] phy: ingenic: don't disable the supply in exit
 
 The supply is enabled in power_on and disabled in power_off; exit
 disabling it again unbalances it. dwc2 powers its PHY off before exiting

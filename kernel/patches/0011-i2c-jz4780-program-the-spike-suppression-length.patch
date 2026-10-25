@@ -1,7 +1,7 @@
 From 9b891db21c4140c6b06cf30bcd46cd9f9c2616c9 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:27:24 +0000
-Subject: [PATCH 11/60] i2c: jz4780: program the spike suppression length
+Subject: [PATCH 11/61] i2c: jz4780: program the spike suppression length
 
 The X1000 and the SoCs after it (X1830, X1600) have a spike suppression
 register at 0xa0: I2C_FLT in the X1000 programming manual, SMB_FLT in

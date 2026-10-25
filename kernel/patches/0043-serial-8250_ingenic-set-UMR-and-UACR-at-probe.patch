@@ -1,7 +1,7 @@
 From 2698842d6dee0ab8c5b96e67cc3457890185f4ed Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 20:38:50 +0000
-Subject: [PATCH 43/60] serial: 8250_ingenic: set UMR and UACR at probe
+Subject: [PATCH 43/61] serial: 8250_ingenic: set UMR and UACR at probe
 
 Ingenic UARTs have two registers beyond the 16550's: UMR, the number of
 clocks a bit takes, and UACR, which adds one clock to chosen bits of a

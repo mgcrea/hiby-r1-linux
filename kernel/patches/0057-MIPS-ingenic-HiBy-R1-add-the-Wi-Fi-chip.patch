@@ -1,7 +1,7 @@
-From 6888c946fbd0579b754a096621f65b93d8052333 Mon Sep 17 00:00:00 2001
+From afcb3348ffd09d87005f6c8fcbacaa06158b15c3 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sun, 25 Oct 2026 09:24:45 +0000
-Subject: [PATCH 57/60] MIPS: ingenic: HiBy R1: add the Wi-Fi chip
+Subject: [PATCH 57/61] MIPS: ingenic: HiBy R1: add the Wi-Fi chip
 
 The AP6212 module's Wi-Fi half, a BCM43430A1, is on MSC0 over SDIO,
 on the pins the stock device tree gives MSC0 (PB12-PB17, function 0),

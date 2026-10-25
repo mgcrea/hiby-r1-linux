@@ -1,7 +1,7 @@
 From 831b3f7fe72131c98a05ec0c36b819ef811c3ecb Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:39:55 +0000
-Subject: [PATCH 15/60] iio: adc: add a driver for the Ingenic X1600 ADC
+Subject: [PATCH 15/61] iio: adc: add a driver for the Ingenic X1600 ADC
 
 The X1600's SAR ADC has four auxiliary channels, each with its own start
 bit, interrupt flag and 12-bit result, and none of the touchscreen or

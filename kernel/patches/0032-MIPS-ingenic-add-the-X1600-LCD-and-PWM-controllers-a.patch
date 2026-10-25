@@ -1,7 +1,7 @@
 From 1f6c69bbbc33d292c281d6d645054caf92959694 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:00:55 +0000
-Subject: [PATCH 32/60] MIPS: ingenic: add the X1600 LCD and PWM controllers
+Subject: [PATCH 32/61] MIPS: ingenic: add the X1600 LCD and PWM controllers
  and the HiBy R1's display
 
 Describe the X1600's LCD and PWM controllers, and drive the HiBy R1's screen

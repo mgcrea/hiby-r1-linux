@@ -1,7 +1,7 @@
 From 09c4a9e9b0d72931cacdd06fd719c0fffb7afd1b Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 12:24:01 +0000
-Subject: [PATCH 35/60] watchdog: jz4740: add the X1600
+Subject: [PATCH 35/61] watchdog: jz4740: add the X1600
 
 The X1600 watchdog counter ignores writes to TCNT: writing 0 there, as the
 driver pings, leaves it counting, and the SoC resets. Setting bit 10 of TCSR

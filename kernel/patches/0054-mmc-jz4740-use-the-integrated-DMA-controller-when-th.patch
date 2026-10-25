@@ -1,7 +1,7 @@
-From 033369e25f422b68874e7feab2c1a2f990104b98 Mon Sep 17 00:00:00 2001
+From 35f8cb0fcdcef1ad1b7c6c0e9f3c8943f09c334a Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 10:19:16 +0000
-Subject: [PATCH 54/60] mmc: jz4740: use the integrated DMA controller when
+Subject: [PATCH 54/61] mmc: jz4740: use the integrated DMA controller when
  there is no other
 
 From the JZ4780 on, the MSC has a DMA controller of its own, which walks
@@ -14,22 +14,31 @@ Use the integrated controller on the X1000 and later when the device
 tree gives no DMA channels: one descriptor per scatterlist segment, up to
 64 KiB each, started right after the command. A write is complete once
 the transfer is done, as before. A read needs its last words in memory,
-and on the X1600 no flag says so reliably: DMA_DATA_DONE never comes,
-and DMAEND came for an 8-byte read but not for the 64-byte one after it,
-whose address and remaining length had both run out. So a read is done
-when the DMA address reaches the end of the last segment with nothing
-left, or on DMAEND. Buffers that aren't word-aligned still go through
-PIO. Device trees that name external channels keep using them.
+and on the X1600 no flag was seen to say so reliably: DMA_DATA_DONE did
+not come, and DMAEND came for an 8-byte read but not for the 64-byte one
+after it, whose address and remaining length had both run out. So a read
+is done when the DMA address reaches the end of the last segment with
+nothing left, or on DMAEND. Buffers that aren't word-aligned still go
+through PIO. Device trees that name external channels keep using them.
+
+The interrupt handler clears the flags of masked interrupts. It must
+leave DMA_DATA_DONE and WR_ALL_DONE alone, which the integrated DMA sets
+as a transfer ends: on the X1600, writing 1 to DMA_DATA_DONE alone took
+MSC_IFLG from 0x80012001 to 0x00002000 and cleared DATA_TRAN_DONE and
+DMAEND in MSC_STAT too. When another interrupt (an SDIO card's, here)
+came between the end of a transfer and the poll for DATA_TRAN_DONE, the
+transfer timed out although complete. (The flags above that "did not
+come" were seen while this could still happen.)
 
 On the HiBy R1 (X1600, an SDHC card at 50 MHz, 4-bit), reads go from 17.3
 to 22.5 MB/s and writes from 13.9 to 18.2 MB/s, with the CPU free; as a
 USB mass storage gadget, writes from a computer from 4.4 to 10.7 MB/s.
 ---
- drivers/mmc/host/jz4740_mmc.c | 174 ++++++++++++++++++++++++++++++++--
- 1 file changed, 166 insertions(+), 8 deletions(-)
+ drivers/mmc/host/jz4740_mmc.c | 186 ++++++++++++++++++++++++++++++++--
+ 1 file changed, 178 insertions(+), 8 deletions(-)
 
 diff --git a/drivers/mmc/host/jz4740_mmc.c b/drivers/mmc/host/jz4740_mmc.c
-index 6a3c26b..dfe8a6d 100644
+index 6a3c26b..686efa6 100644
 --- a/drivers/mmc/host/jz4740_mmc.c
 +++ b/drivers/mmc/host/jz4740_mmc.c
 @@ -24,6 +24,7 @@
@@ -50,15 +59,17 @@ index 6a3c26b..dfe8a6d 100644
  
  #define JZ_MMC_STRPCL_EXIT_MULTIPLE BIT(7)
  #define JZ_MMC_STRPCL_EXIT_TRANSFER BIT(6)
-@@ -93,6 +97,7 @@
+@@ -93,6 +97,9 @@
  #define JZ_MMC_CMDAT_RSP_R2 2
  #define JZ_MMC_CMDAT_RSP_R3 3
  
++#define JZ_MMC_IRQ_DMA_DATA_DONE BIT(31)
++#define JZ_MMC_IRQ_WR_ALL_DONE BIT(23)
 +#define JZ_MMC_IRQ_DMAEND BIT(16)
  #define JZ_MMC_IRQ_SDIO BIT(7)
  #define JZ_MMC_IRQ_TXFIFO_WR_REQ BIT(6)
  #define JZ_MMC_IRQ_RXFIFO_RD_REQ BIT(5)
-@@ -103,6 +108,11 @@
+@@ -103,6 +110,11 @@
  #define JZ_MMC_DMAC_DMA_SEL BIT(1)
  #define JZ_MMC_DMAC_DMA_EN BIT(0)
  
@@ -70,7 +81,7 @@ index 6a3c26b..dfe8a6d 100644
  #define	JZ_MMC_LPM_DRV_RISING BIT(31)
  #define	JZ_MMC_LPM_DRV_RISING_QTR_PHASE_DLY BIT(31)
  #define	JZ_MMC_LPM_DRV_RISING_1NS_DLY BIT(30)
-@@ -140,6 +150,13 @@ enum jz4740_mmc_state {
+@@ -140,6 +152,13 @@ enum jz4740_mmc_state {
   * COOKIE_MAPPED: the request was mapped in the irq handler,
   * and should be unmapped before mmc_request_done is called..
   */
@@ -84,7 +95,7 @@ index 6a3c26b..dfe8a6d 100644
  enum jz4780_cookie {
  	COOKIE_UNMAPPED = 0,
  	COOKIE_PREMAPPED,
-@@ -179,6 +196,18 @@ struct jz4740_mmc_host {
+@@ -179,6 +198,18 @@ struct jz4740_mmc_host {
  	struct dma_chan *dma_tx;
  	bool use_dma;
  
@@ -103,7 +114,7 @@ index 6a3c26b..dfe8a6d 100644
  /* The DMA trigger level is 8 words, that is to say, the DMA read
   * trigger is when data words in MSC_RXFIFO is >= 8 and the DMA write
   * trigger is when data words in MSC_TXFIFO is < 8.
-@@ -283,13 +312,22 @@ static inline struct dma_chan *jz4740_mmc_get_dma_chan(struct jz4740_mmc_host *h
+@@ -283,13 +314,22 @@ static inline struct dma_chan *jz4740_mmc_get_dma_chan(struct jz4740_mmc_host *h
  		return host->dma_tx;
  }
  
@@ -128,7 +139,7 @@ index 6a3c26b..dfe8a6d 100644
  	data->host_cookie = COOKIE_UNMAPPED;
  }
  
-@@ -300,14 +338,13 @@ static int jz4740_mmc_prepare_dma_data(struct jz4740_mmc_host *host,
+@@ -300,14 +340,13 @@ static int jz4740_mmc_prepare_dma_data(struct jz4740_mmc_host *host,
  				       struct mmc_data *data,
  				       int cookie)
  {
@@ -144,7 +155,7 @@ index 6a3c26b..dfe8a6d 100644
  			data->sg,
  			data->sg_len,
  			dir);
-@@ -371,13 +408,103 @@ static int jz4740_mmc_start_dma_transfer(struct jz4740_mmc_host *host,
+@@ -371,13 +410,105 @@ static int jz4740_mmc_start_dma_transfer(struct jz4740_mmc_host *host,
  	return -ENOMEM;
  }
  
@@ -206,9 +217,11 @@ index 6a3c26b..dfe8a6d 100644
 +/*
 + * The card's data is in (DATA_TRAN_DONE); wait for the integrated DMA to
 + * have written the last of it to memory. On the X1600 neither of its flags
-+ * says so reliably: DMA_DATA_DONE (bit 31, which Rockbox waits for on the
-+ * X1000) never comes, and DMAEND came for an 8-byte read but not for the
-+ * 64-byte one after it, whose address and length had both run out. So it
++ * was seen to say so reliably: DMA_DATA_DONE (bit 31, which Rockbox waits
++ * for on the X1000) did not come, and DMAEND came for an 8-byte read but not
++ * for the 64-byte one after it, whose address and length had both run out
++ * (both seen while jz_mmc_irq() could still clear them by clearing
++ * DMA_DATA_DONE, which may be what happened). So it
 + * is done when the address has reached the end of the last segment with
 + * nothing left of it, or on DMAEND.
 + */
@@ -249,7 +262,7 @@ index 6a3c26b..dfe8a6d 100644
  		return;
  
  	data->host_cookie = COOKIE_UNMAPPED;
-@@ -395,7 +522,7 @@ static void jz4740_mmc_post_request(struct mmc_host *mmc,
+@@ -395,7 +526,7 @@ static void jz4740_mmc_post_request(struct mmc_host *mmc,
  	if (data && data->host_cookie != COOKIE_UNMAPPED)
  		jz4740_mmc_dma_unmap(host, data);
  
@@ -258,7 +271,7 @@ index 6a3c26b..dfe8a6d 100644
  		struct dma_chan *chan = jz4740_mmc_get_dma_chan(host, data);
  
  		dmaengine_terminate_all(chan);
-@@ -462,6 +589,11 @@ static void jz4740_mmc_request_done(struct jz4740_mmc_host *host)
+@@ -462,6 +593,11 @@ static void jz4740_mmc_request_done(struct jz4740_mmc_host *host)
  	data = req->data;
  	host->req = NULL;
  
@@ -270,7 +283,7 @@ index 6a3c26b..dfe8a6d 100644
  	if (data && data->host_cookie == COOKIE_MAPPED)
  		jz4740_mmc_dma_unmap(host, data);
  	mmc_request_done(host->mmc, req);
-@@ -680,6 +812,7 @@ static void jz4740_mmc_send_command(struct jz4740_mmc_host *host,
+@@ -680,6 +816,7 @@ static void jz4740_mmc_send_command(struct jz4740_mmc_host *host,
  	struct mmc_command *cmd)
  {
  	uint32_t cmdat = host->cmdat;
@@ -278,7 +291,7 @@ index 6a3c26b..dfe8a6d 100644
  
  	host->cmdat &= ~JZ_MMC_CMDAT_INIT;
  	jz4740_mmc_clock_disable(host);
-@@ -726,6 +859,11 @@ static void jz4740_mmc_send_command(struct jz4740_mmc_host *host,
+@@ -726,6 +863,11 @@ static void jz4740_mmc_send_command(struct jz4740_mmc_host *host,
  			}
  		} else if (host->version >= JZ_MMC_JZ4780) {
  			writel(0, host->base + JZ_REG_MMC_DMAC);
@@ -290,7 +303,7 @@ index 6a3c26b..dfe8a6d 100644
  		}
  
  		writew(cmd->data->blksz, host->base + JZ_REG_MMC_BLKLEN);
-@@ -737,6 +875,10 @@ static void jz4740_mmc_send_command(struct jz4740_mmc_host *host,
+@@ -737,6 +879,10 @@ static void jz4740_mmc_send_command(struct jz4740_mmc_host *host,
  	writel(cmdat, host->base + JZ_REG_MMC_CMDAT);
  
  	jz4740_mmc_clock_enable(host, 1);
@@ -301,7 +314,7 @@ index 6a3c26b..dfe8a6d 100644
  }
  
  static void jz_mmc_prepare_data_transfer(struct jz4740_mmc_host *host)
-@@ -786,6 +928,9 @@ static irqreturn_t jz_mmc_irq_worker(int irq, void *devid)
+@@ -786,6 +932,9 @@ static irqreturn_t jz_mmc_irq_worker(int irq, void *devid)
  			 */
  			timeout = jz4740_mmc_start_dma_transfer(host, data);
  			data->bytes_xfered = data->blocks * data->blksz;
@@ -311,7 +324,7 @@ index 6a3c26b..dfe8a6d 100644
  		} else if (data->flags & MMC_DATA_READ)
  			/* Use PIO if DMA is not enabled.
  			 * Data transfer direction was defined before
-@@ -812,6 +957,9 @@ static irqreturn_t jz_mmc_irq_worker(int irq, void *devid)
+@@ -812,6 +961,9 @@ static irqreturn_t jz_mmc_irq_worker(int irq, void *devid)
  		fallthrough;
  
  	case JZ4740_MMC_STATE_SEND_STOP:
@@ -321,17 +334,26 @@ index 6a3c26b..dfe8a6d 100644
  		if (!req->stop)
  			break;
  
-@@ -850,7 +998,8 @@ static irqreturn_t jz_mmc_irq(int irq, void *devid)
+@@ -849,8 +1001,17 @@ static irqreturn_t jz_mmc_irq(int irq, void *devid)
+ 	tmp = irq_reg;
  	irq_reg &= ~host->irq_mask;
  
++	/*
++	 * Clear the flags of masked interrupts, but not those the request in
++	 * flight still waits for. Nor DMA_DATA_DONE and WR_ALL_DONE, which the
++	 * integrated DMA sets with them: on the X1600, clearing DMA_DATA_DONE
++	 * clears DATA_TRAN_DONE and DMAEND too, and the transfer then times
++	 * out although it is complete.
++	 */
  	tmp &= ~(JZ_MMC_IRQ_TXFIFO_WR_REQ | JZ_MMC_IRQ_RXFIFO_RD_REQ |
 -		JZ_MMC_IRQ_PRG_DONE | JZ_MMC_IRQ_DATA_TRAN_DONE);
 +		JZ_MMC_IRQ_PRG_DONE | JZ_MMC_IRQ_DATA_TRAN_DONE |
-+		JZ_MMC_IRQ_DMAEND);
++		JZ_MMC_IRQ_DMAEND | JZ_MMC_IRQ_DMA_DATA_DONE |
++		JZ_MMC_IRQ_WR_ALL_DONE);
  
  	if (tmp != irq_reg)
  		jz4740_mmc_write_irq_reg(host, tmp & ~irq_reg);
-@@ -1123,6 +1272,15 @@ static int jz4740_mmc_probe(struct platform_device* pdev)
+@@ -1123,6 +1284,15 @@ static int jz4740_mmc_probe(struct platform_device* pdev)
  		goto err_free_irq;
  	host->use_dma = !ret;
  
@@ -347,7 +369,7 @@ index 6a3c26b..dfe8a6d 100644
  	platform_set_drvdata(pdev, host);
  	ret = mmc_add_host(mmc);
  
-@@ -1133,7 +1291,7 @@ static int jz4740_mmc_probe(struct platform_device* pdev)
+@@ -1133,7 +1303,7 @@ static int jz4740_mmc_probe(struct platform_device* pdev)
  	dev_info(&pdev->dev, "Ingenic SD/MMC card driver registered\n");
  
  	dev_info(&pdev->dev, "Using %s, %d-bit mode\n",

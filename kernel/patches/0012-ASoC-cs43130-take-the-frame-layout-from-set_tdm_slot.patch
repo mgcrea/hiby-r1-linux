@@ -1,7 +1,7 @@
 From a288c900c014074c6da48758f302ad8b62cd52d0 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:29:14 +0000
-Subject: [PATCH 12/60] ASoC: cs43130: take the frame layout from set_tdm_slot
+Subject: [PATCH 12/61] ASoC: cs43130: take the frame layout from set_tdm_slot
 
 The driver works out the slot width from the frequency passed to the
 DAI's set_sysclk(), which it takes for SCLK. Generic cards pass MCLK

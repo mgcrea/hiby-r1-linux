@@ -1,7 +1,7 @@
 From fce7b753745c055f3ff4d72a6f34468a30a9406c Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 07:30:24 +0000
-Subject: [PATCH 52/60] spi: add a driver for the Ingenic X1600 SFC
+Subject: [PATCH 52/61] spi: add a driver for the Ingenic X1600 SFC
 
 A spi-mem controller driver for the X1600's SPI flash controller, with
 programmed I/O only: each operation is one SFC transfer, its data moved
