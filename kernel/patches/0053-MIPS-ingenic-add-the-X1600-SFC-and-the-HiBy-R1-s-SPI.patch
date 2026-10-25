@@ -1,4 +1,4 @@
-From ff1a941913324b7f4af52b4fb06fdcd1cc95718a Mon Sep 17 00:00:00 2001
+From bfd8c87ff52b18d2336ead7fdc636fc95c35ff73 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 07:30:24 +0000
 Subject: [PATCH 53/57] MIPS: ingenic: add the X1600 SFC and the HiBy R1's

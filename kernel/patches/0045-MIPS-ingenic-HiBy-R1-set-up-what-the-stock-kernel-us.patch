@@ -1,4 +1,4 @@
-From 99a65da35a348b9520e34685e622123594b3e976 Mon Sep 17 00:00:00 2001
+From 3e12b686df7b89c42a9bd261095e48df18c1fdeb Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 04:01:44 +0000
 Subject: [PATCH 45/57] MIPS: ingenic: HiBy R1: set up what the stock kernel

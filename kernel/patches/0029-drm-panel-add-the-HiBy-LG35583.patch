@@ -1,4 +1,4 @@
-From 025813296bc9b959778b6be7c0696a4760e44527 Mon Sep 17 00:00:00 2001
+From 82de21e87878d31ae184197e8df566aea9c5a6e3 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:05:52 +0000
 Subject: [PATCH 29/57] drm/panel: add the HiBy LG35583
@@ -7,12 +7,13 @@ The 480x800 parallel RGB panel of the HiBy R1. It is set up over a 3-wire
 SPI bus with 16-bit words, each carrying a register address byte or a
 data byte, which no existing panel driver speaks. The set-up sequence is
 the vendor kernel's; prepare sends it up to sleep-out, and enable and
-disable switch the display on and off.
+disable switch the display on and off. It asks for BGR666: in RGB order the
+R1 shows red and blue swapped.
 ---
  drivers/gpu/drm/panel/Kconfig              |   8 +
  drivers/gpu/drm/panel/Makefile             |   1 +
- drivers/gpu/drm/panel/panel-hiby-lg35583.c | 341 +++++++++++++++++++++
- 3 files changed, 350 insertions(+)
+ drivers/gpu/drm/panel/panel-hiby-lg35583.c | 342 +++++++++++++++++++++
+ 3 files changed, 351 insertions(+)
  create mode 100644 drivers/gpu/drm/panel/panel-hiby-lg35583.c
 
 diff --git a/drivers/gpu/drm/panel/Kconfig b/drivers/gpu/drm/panel/Kconfig
@@ -48,10 +49,10 @@ index 3b523cf..4eb41bf 100644
  obj-$(CONFIG_DRM_PANEL_HIMAX_HX83112A) += panel-himax-hx83112a.o
 diff --git a/drivers/gpu/drm/panel/panel-hiby-lg35583.c b/drivers/gpu/drm/panel/panel-hiby-lg35583.c
 new file mode 100644
-index 0000000..d5507d1
+index 0000000..47aba09
 --- /dev/null
 +++ b/drivers/gpu/drm/panel/panel-hiby-lg35583.c
-@@ -0,0 +1,341 @@
+@@ -0,0 +1,342 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * The LG35583 panel of the HiBy R1
@@ -290,7 +291,8 @@ index 0000000..d5507d1
 +
 +static int lg35583_get_modes(struct drm_panel *panel, struct drm_connector *connector)
 +{
-+	static const u32 bus_format = MEDIA_BUS_FMT_RGB666_1X18;
++	/* Red and blue are swapped on the R1 without it. */
++	static const u32 bus_format = MEDIA_BUS_FMT_BGR666_1X18;
 +	struct drm_display_mode *mode;
 +
 +	mode = drm_mode_duplicate(connector->dev, &lg35583_mode);

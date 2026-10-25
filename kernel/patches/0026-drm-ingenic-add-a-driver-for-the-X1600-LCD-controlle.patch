@@ -1,4 +1,4 @@
-From d383fcd79eb97641de32590fa6a118ff93b94813 Mon Sep 17 00:00:00 2001
+From acd5b3dd566f23c9d5d00780485ed76aeb948706 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:00:55 +0000
 Subject: [PATCH 26/57] drm/ingenic: add a driver for the X1600 LCD controller
@@ -9,7 +9,8 @@ takes from SRD_CHAIN_ADDR, and keeps its interface, TFT timings and smart
 panel set-up in separate register blocks (X1600 programming manual,
 chapter 10; the X2000's controller without the composer). This driver
 handles parallel RGB panels on a 24-bit bus, with one full-screen RGB565
-plane.
+plane, and takes the colour order (RGB or BGR) from the panel's bus
+format.
 
 Each descriptor points at itself, so a frame repeats until a flip hands
 the controller the other one. The controller takes it "at appropriate
@@ -19,8 +20,8 @@ reports the new descriptor at the end of a frame.
  drivers/gpu/drm/Makefile                    |   1 +
  drivers/gpu/drm/ingenic/Kconfig             |  20 +
  drivers/gpu/drm/ingenic/Makefile            |   1 +
- drivers/gpu/drm/ingenic/ingenic-x1600-drm.c | 652 ++++++++++++++++++++
- 4 files changed, 674 insertions(+)
+ drivers/gpu/drm/ingenic/ingenic-x1600-drm.c | 694 ++++++++++++++++++++
+ 4 files changed, 716 insertions(+)
  create mode 100644 drivers/gpu/drm/ingenic/ingenic-x1600-drm.c
 
 diff --git a/drivers/gpu/drm/Makefile b/drivers/gpu/drm/Makefile
@@ -77,10 +78,10 @@ index f10cc1c..90072ad 100644
 +obj-$(CONFIG_DRM_INGENIC_X1600) += ingenic-x1600-drm.o
 diff --git a/drivers/gpu/drm/ingenic/ingenic-x1600-drm.c b/drivers/gpu/drm/ingenic/ingenic-x1600-drm.c
 new file mode 100644
-index 0000000..2df136c
+index 0000000..dc85a69
 --- /dev/null
 +++ b/drivers/gpu/drm/ingenic/ingenic-x1600-drm.c
-@@ -0,0 +1,652 @@
+@@ -0,0 +1,694 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * DRM driver for the LCD controller of the Ingenic X1600
@@ -104,6 +105,7 @@ index 0000000..2df136c
 +#include <linux/dma-mapping.h>
 +#include <linux/interrupt.h>
 +#include <linux/io.h>
++#include <linux/media-bus-format.h>
 +#include <linux/module.h>
 +#include <linux/of.h>
 +#include <linux/platform_device.h>
@@ -125,6 +127,7 @@ index 0000000..2df136c
 +#include <drm/drm_gem_framebuffer_helper.h>
 +#include <drm/drm_of.h>
 +#include <drm/drm_plane.h>
++#include <drm/drm_print.h>
 +#include <drm/drm_probe_helper.h>
 +#include <drm/drm_vblank.h>
 +
@@ -174,7 +177,7 @@ index 0000000..2df136c
 +#define X1600_LCD_TFT_VSYNC_DL		BIT(7)
 +#define X1600_LCD_TFT_MODE		GENMASK(2, 0)
 +#define X1600_LCD_TFT_MODE_24BIT	0
-+/* RGB to BGR, as the vendor kernel sets it for the panels it supports. */
++#define X1600_LCD_TFT_COLOR_RGB		0
 +#define X1600_LCD_TFT_COLOR_BGR		2
 +
 +#define X1600_LCD_DESC_CFG_FMT		GENMASK(22, 19)
@@ -222,6 +225,7 @@ index 0000000..2df136c
 +	u32 event_desc;
 +
 +	u32 bus_flags;
++	u32 color_order;
 +};
 +
 +static const u32 x1600_lcd_formats[] = {
@@ -309,8 +313,8 @@ index 0000000..2df136c
 +	writel(x1600_lcd_timing(vde, vde + mode->vdisplay),
 +	       lcd->base + X1600_LCD_TFT_VDE);
 +
-+	val = FIELD_PREP(X1600_LCD_TFT_COLOR_EVEN, X1600_LCD_TFT_COLOR_BGR) |
-+	      FIELD_PREP(X1600_LCD_TFT_COLOR_ODD, X1600_LCD_TFT_COLOR_BGR) |
++	val = FIELD_PREP(X1600_LCD_TFT_COLOR_EVEN, lcd->color_order) |
++	      FIELD_PREP(X1600_LCD_TFT_COLOR_ODD, lcd->color_order) |
 +	      FIELD_PREP(X1600_LCD_TFT_MODE, X1600_LCD_TFT_MODE_24BIT);
 +	if (lcd->bus_flags & DRM_BUS_FLAG_PIXDATA_DRIVE_NEGEDGE)
 +		val |= X1600_LCD_TFT_PIX_CLK_INV;
@@ -513,13 +517,51 @@ index 0000000..2df136c
 +	lcd->cur = next;
 +}
 +
++/*
++ * Panels with 18 data lines take the top six bits of each colour of the
++ * 888 mode: in the 666 mode, the HiBy R1's panel shows wrong colours.
++ */
++static int x1600_lcd_color_order(const struct drm_display_info *info)
++{
++	if (!info->num_bus_formats)
++		return X1600_LCD_TFT_COLOR_RGB;
++
++	switch (info->bus_formats[0]) {
++	case MEDIA_BUS_FMT_RGB666_1X18:
++	case MEDIA_BUS_FMT_RGB888_1X24:
++		return X1600_LCD_TFT_COLOR_RGB;
++	case MEDIA_BUS_FMT_BGR666_1X18:
++	case MEDIA_BUS_FMT_BGR888_1X24:
++		return X1600_LCD_TFT_COLOR_BGR;
++	default:
++		return -EINVAL;
++	}
++}
++
++static int x1600_lcd_encoder_atomic_check(struct drm_encoder *encoder,
++					  struct drm_crtc_state *crtc_state,
++					  struct drm_connector_state *conn_state)
++{
++	const struct drm_display_info *info = &conn_state->connector->display_info;
++
++	if (x1600_lcd_color_order(info) < 0) {
++		drm_dbg_kms(encoder->dev, "Unsupported bus format 0x%04x\n",
++			    info->bus_formats[0]);
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
 +static void x1600_lcd_encoder_atomic_mode_set(struct drm_encoder *encoder,
 +					      struct drm_crtc_state *crtc_state,
 +					      struct drm_connector_state *conn_state)
 +{
 +	struct x1600_lcd *lcd = to_x1600_lcd(encoder->dev);
++	const struct drm_display_info *info = &conn_state->connector->display_info;
 +
-+	lcd->bus_flags = conn_state->connector->display_info.bus_flags;
++	lcd->bus_flags = info->bus_flags;
++	lcd->color_order = x1600_lcd_color_order(info);
 +}
 +
 +static const struct drm_plane_funcs x1600_lcd_plane_funcs = {
@@ -556,6 +598,7 @@ index 0000000..2df136c
 +};
 +
 +static const struct drm_encoder_helper_funcs x1600_lcd_encoder_helper_funcs = {
++	.atomic_check		= x1600_lcd_encoder_atomic_check,
 +	.atomic_mode_set	= x1600_lcd_encoder_atomic_mode_set,
 +};
 +

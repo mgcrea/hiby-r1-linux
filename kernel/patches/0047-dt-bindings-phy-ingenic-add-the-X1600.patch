@@ -1,4 +1,4 @@
-From aebad1ba64dfc5e7b1ff979caebc2e45fbd67e06 Mon Sep 17 00:00:00 2001
+From 62e57500dd20ea199094fd8938b494babc2549f9 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 04:48:08 +0000
 Subject: [PATCH 47/57] dt-bindings: phy: ingenic: add the X1600

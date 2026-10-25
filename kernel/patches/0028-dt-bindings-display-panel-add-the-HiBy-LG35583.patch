@@ -1,4 +1,4 @@
-From d17016659295a48e56feffc2b4f09bce25fe990a Mon Sep 17 00:00:00 2001
+From d0244621f27b5970f1daea953a6d0091822c033f Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:05:52 +0000
 Subject: [PATCH 28/57] dt-bindings: display: panel: add the HiBy LG35583
