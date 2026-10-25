@@ -1,7 +1,7 @@
 From 8b06a1bdf9e5628eab165ae25d25390a4db54f59 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sun, 25 Oct 2026 07:34:24 +0000
-Subject: [PATCH 55/57] MIPS: ingenic: HiBy R1: keep the kernel log across a
+Subject: [PATCH 55/60] MIPS: ingenic: HiBy R1: keep the kernel log across a
  reset
 
 Reserve the top 64 KiB of RAM for ramoops: the console log and any oops

@@ -35,6 +35,11 @@ file /sbin/r1-bt /r1/initramfs/r1-bt 0755 0 0
 # r1-share hands the SD card to.
 file /sbin/r1-usb /r1/initramfs/r1-usb 0755 0 0
 file /sbin/r1-share /r1/initramfs/r1-share 0755 0 0
+# Wi-Fi: the driver's modules from the card, the stock wpa_supplicant
+# (/rom) and busybox's udhcpc.
+file /sbin/r1-wifi /r1/initramfs/r1-wifi 0755 0 0
+file /sbin/r1-modprobe /r1/initramfs/r1-modprobe 0755 0 0
+file /sbin/r1-dhcp /r1/initramfs/r1-dhcp 0755 0 0
 # The flash kernel's hand-over to the card's kernel.
 file /sbin/r1-loader /r1/initramfs/r1-loader 0755 0 0
 file /sbin/r1kexec /src/build-arm64/r1kexec 0755 0 0

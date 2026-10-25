@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build the R1's system image for the `rootfs` flash slot: the stock
-programs mainline runs (adbd, dbus, BlueZ, bluez-alsa), the libraries they
-and r1player need, the font and the Bluetooth chip's firmware, taken from the
-unpacked stock root filesystem, at the paths init expects under /rom.
+programs mainline runs (adbd, dbus, BlueZ, bluez-alsa, wpa_supplicant), the
+libraries they and r1player need, the font and the AP6212's firmware
+(Bluetooth and Wi-Fi), taken from the unpacked stock root filesystem, at the paths init expects under /rom.
 
     tools/mksystem.py [STOCK_ROOTFS [R1PLAYER [OUT]]]
 
@@ -31,17 +31,25 @@ PROGRAMS = [
     "usr/bin/bluetoothctl",
     "usr/bin/hciconfig",
     "usr/bin/hcitool",
+    "usr/sbin/wpa_supplicant",
+    "usr/sbin/wpa_cli",
 ]
 # Loaded at run time, so absent from DT_NEEDED: libnss_files for dbus's user
 # lookups, libgcc_s for pthread_cancel (bluealsa aborts without it when a
 # stream ends), and the loader itself.
 EXTRA = ["lib/ld.so.1", "lib/libnss_files.so.2", "lib/libgcc_s.so.1",
          "usr/resource/fonts/default.otf"]
-# btbcm asks for brcm/BCM43430A1.hcd; stock's bt_init picks the file by the
-# module's chip vendor, and this R1 takes the 1010.1030 one (docs/kernel.md,
-# "Bluetooth"). init copies it to /tmp/firmware.
-BT_FIRMWARE = ("lib/firmware/bt_bcm/BCM4343A1_001.002.009.1010.1030.hcd",
-               "lib/firmware/brcm/BCM43430A1.hcd")
+# Each stock file and the name the kernel asks for. btbcm asks for
+# brcm/BCM43430A1.hcd; stock's bt_init picks the file by the module's chip
+# vendor, and this R1 takes the 1010.1030 one (docs/kernel.md, "Bluetooth").
+# init copies it to /tmp/firmware. brcmfmac asks for the BCM43430A1's
+# brcmfmac43430-sdio.bin and .txt (its settings: this module's nvram), which
+# the kernel finds in /lib/firmware.
+FIRMWARE = [
+    ("lib/firmware/bt_bcm/BCM4343A1_001.002.009.1010.1030.hcd", "lib/firmware/brcm/BCM43430A1.hcd"),
+    ("lib/firmware/wifi_bcm/fw_bcm43438a1.bin", "lib/firmware/brcm/brcmfmac43430-sdio.bin"),
+    ("lib/firmware/wifi_bcm/nvram_ap6212a.txt", "lib/firmware/brcm/brcmfmac43430-sdio.txt"),
+]
 LIB_DIRS = ["lib", "usr/lib"]
 
 
@@ -117,9 +125,10 @@ def main():
     with tempfile.TemporaryDirectory() as stage:
         for rel in sorted(files):
             copy(root, rel, stage)
-        fw = os.path.join(stage, BT_FIRMWARE[1])
-        os.makedirs(os.path.dirname(fw), exist_ok=True)
-        shutil.copy2(os.path.join(root, BT_FIRMWARE[0]), fw)
+        for src, dst in FIRMWARE:
+            fw = os.path.join(stage, dst)
+            os.makedirs(os.path.dirname(fw), exist_ok=True)
+            shutil.copy2(os.path.join(root, src), fw)
         with open(os.path.join(stage, "etc-r1-system"), "w") as f:
             f.write(f"r1 system {time.strftime('%Y-%m-%d %H:%M')}\n" + "".join(f"{p}\n" for p in sorted(files)))
         os.makedirs(os.path.join(stage, "etc"), exist_ok=True)
@@ -128,7 +137,7 @@ def main():
             os.remove(out)
         subprocess.run(["mksquashfs", stage, out, "-comp", "lzo", "-all-root", "-noappend",
                         "-no-xattrs", "-quiet"], check=True)
-    print(f"{out}: {os.path.getsize(out)} bytes, {len(files)} files and the Bluetooth firmware")
+    print(f"{out}: {os.path.getsize(out)} bytes, {len(files)} files and {len(FIRMWARE)} firmware files")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
-From 7c181b8d375d94c3ac94a4310df8a0981c577cd3 Mon Sep 17 00:00:00 2001
+From 2813bb1cbdef1cd37cae9bcc842302263f4ffef1 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Thu, 22 Oct 2026 22:15:10 +0000
-Subject: [PATCH 57/57] DEBUG: paint boot progress stripes on the HiBy R1
+Subject: [PATCH 60/60] DEBUG: paint boot progress stripes on the HiBy R1
  screen
 
 Not for upstream: with no serial console, a stripe per milestone shows
@@ -11,20 +11,20 @@ stripe per step from row 400 (n = 0..8) and setup_arch one per step
 (n = 10..16). Only page 0 of the framebuffer: page 1 holds the display's
 frame descriptor.
 ---
- arch/mips/include/asm/mach-ingenic/r1-mark.h | 35 ++++++++++++++++++++
+ arch/mips/include/asm/mach-ingenic/r1-mark.h | 42 ++++++++++++++++++++
  arch/mips/ingenic/Kconfig                    |  7 ++++
- arch/mips/kernel/head.S                      | 23 +++++++++++++
- arch/mips/kernel/setup.c                     | 12 +++++++
- init/main.c                                  | 15 +++++++++
- 5 files changed, 92 insertions(+)
+ arch/mips/kernel/head.S                      | 23 +++++++++++
+ arch/mips/kernel/setup.c                     | 12 ++++++
+ init/main.c                                  | 15 +++++++
+ 5 files changed, 99 insertions(+)
  create mode 100644 arch/mips/include/asm/mach-ingenic/r1-mark.h
 
 diff --git a/arch/mips/include/asm/mach-ingenic/r1-mark.h b/arch/mips/include/asm/mach-ingenic/r1-mark.h
 new file mode 100644
-index 0000000..f8eecf0
+index 0000000..3743f93
 --- /dev/null
 +++ b/arch/mips/include/asm/mach-ingenic/r1-mark.h
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,42 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * Boot progress for the HiBy R1 without a serial console: paint stripe @n
@@ -54,6 +54,13 @@ index 0000000..f8eecf0
 +
 +	for (i = 0; i < 480 * 16; i++)
 +		p[i] = c;
++	/*
++	 * And the last mark in RAM that survives a reset: the end of ramoops'
++	 * second dmesg record, which only an oops dump writes. After a start
++	 * that fell back to the flash kernel, `devmem 0x03ff7ffc` reads
++	 * 0xb0070000 + the last mark reached.
++	 */
++	*(volatile unsigned int *)CKSEG1ADDR(0x03ff7ffc) = 0xb0070000 | n;
 +}
 +#else
 +static inline void r1_mark(unsigned int n) { }

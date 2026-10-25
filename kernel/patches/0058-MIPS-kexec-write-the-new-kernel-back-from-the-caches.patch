@@ -1,0 +1,152 @@
+From 6fb13e16574d3a148e3f37227940e1b4cdd4862e Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Sun, 25 Oct 2026 09:55:22 +0000
+Subject: [PATCH 58/60] MIPS: kexec: write the new kernel back from the caches
+ before entering it
+
+relocate_new_kernel copies the new kernel through KSEG0, so the last
+lines it writes can still be in the D-cache when it jumps to the new
+kernel, and only Octeon makes the I-cache see them. On a CPU whose
+instruction fetches don't snoop the D-cache, the new kernel then runs
+whatever the old one left at those addresses.
+
+On the Ingenic X1600 (HiBy R1) this killed a kexec'd kernel early in
+start_kernel, in its first printk, every time once CONFIG_MODULES had
+changed the layout of the image, while the same kernel booted from the
+boot loader.
+
+Write back and invalidate the primary D-cache and the secondary cache,
+and invalidate the primary I-cache, by index before the jump, with the
+geometry machine_kexec() stores beside the relocated code.
+---
+ arch/mips/kernel/machine_kexec.c   | 16 +++++++++
+ arch/mips/kernel/relocate_kernel.S | 55 ++++++++++++++++++++++++++++++
+ 2 files changed, 71 insertions(+)
+
+diff --git a/arch/mips/kernel/machine_kexec.c b/arch/mips/kernel/machine_kexec.c
+index 4e3579b..e271015 100644
+--- a/arch/mips/kernel/machine_kexec.c
++++ b/arch/mips/kernel/machine_kexec.c
+@@ -18,6 +18,7 @@ extern const size_t relocate_new_kernel_size;
+ 
+ extern unsigned long kexec_start_address;
+ extern unsigned long kexec_indirection_page;
++extern unsigned long kexec_dcache[4], kexec_scache[4], kexec_icache[4];
+ 
+ static unsigned long reboot_code_buffer;
+ 
+@@ -206,6 +207,17 @@ void kexec_reboot(void)
+ 	do_kexec();
+ }
+ 
++/* A cache's geometry for relocate_new_kernel, which blasts it by index */
++static void kexec_cache_geometry(unsigned long *g, const struct cache_desc *c)
++{
++	if (!c->waysize || !c->linesz)
++		return;
++	g[0] = c->waysize;
++	g[1] = c->linesz;
++	g[2] = 1UL << c->waybit;
++	g[3] = (unsigned long)c->ways << c->waybit;
++}
++
+ void
+ machine_kexec(struct kimage *image)
+ {
+@@ -225,6 +237,10 @@ machine_kexec(struct kimage *image)
+ 		kexec_indirection_page = (unsigned long)&image->head;
+ 	}
+ 
++	kexec_cache_geometry(kexec_dcache, &current_cpu_data.dcache);
++	kexec_cache_geometry(kexec_scache, &current_cpu_data.scache);
++	kexec_cache_geometry(kexec_icache, &current_cpu_data.icache);
++
+ 	memcpy((void*)reboot_code_buffer, relocate_new_kernel,
+ 	       relocate_new_kernel_size);
+ 
+diff --git a/arch/mips/kernel/relocate_kernel.S b/arch/mips/kernel/relocate_kernel.S
+index de894a0..236e836 100644
+--- a/arch/mips/kernel/relocate_kernel.S
++++ b/arch/mips/kernel/relocate_kernel.S
+@@ -10,9 +10,37 @@
+ #include <asm/mipsregs.h>
+ #include <asm/stackframe.h>
+ #include <asm/addrspace.h>
++#include <asm/cacheops.h>
+ 
+ #include <kernel-entry-init.h>
+ 
++/*
++ * Run \op on every line of every way of one cache, by index, with the
++ * geometry machine_kexec() put at \desc (way size, line size, way step,
++ * end of the ways), read from the relocated copy: t8 holds a label's
++ * link address and t9 where it runs. Nothing when the way size is 0.
++ */
++	.macro	kexec_blast op, desc
++	PTR_LA		t0, \desc
++	PTR_SUB		t0, t0, t8
++	PTR_ADD		t0, t9, t0
++	PTR_L		t1, 0(t0)
++	PTR_L		t2, SZREG(t0)
++	PTR_L		t3, (2 * SZREG)(t0)
++	PTR_L		t4, (3 * SZREG)(t0)
++	beqz		t1, 3f
++	move		t5, zero
++1:	PTR_LI		t6, CKSEG0
++	PTR_ADDU	t6, t6, t5
++	PTR_ADDU	t7, t6, t1
++2:	cache		\op, 0(t6)
++	PTR_ADDU	t6, t6, t2
++	bne		t6, t7, 2b
++	PTR_ADDU	t5, t5, t3
++	bne		t5, t4, 1b
++3:
++	.endm
++
+ LEAF(relocate_new_kernel)
+ 	PTR_L a0,	arg0
+ 	PTR_L a1,	arg1
+@@ -93,6 +121,19 @@ done:
+ 	synci		0($0)
+ 	.set pop
+ #else
++	/*
++	 * The copy went through the D-cache: write the new kernel back to
++	 * memory and drop the I-cache, or the new kernel may run what the old
++	 * one left at addresses whose new contents are still in the D-cache
++	 * (seen on the Ingenic X1600, early in start_kernel). The geometry is
++	 * read from this copy of the code: the old kernel is gone by now.
++	 */
++	bal		4f
++4:	move		t9, ra
++	PTR_LA		t8, 4b
++	kexec_blast	Index_Writeback_Inv_D, kexec_dcache
++	kexec_blast	Index_Writeback_Inv_SD, kexec_scache
++	kexec_blast	Index_Invalidate_I, kexec_icache
+ 	sync
+ #endif
+ 	/* jump to kexec_start_address */
+@@ -176,6 +217,20 @@ EXPORT(kexec_indirection_page)
+ 	PTR_WD		0
+ 	.size		kexec_indirection_page, PTRSIZE
+ 
++/*
++ * The primary D-cache, the secondary cache and the primary I-cache, for
++ * relocate_new_kernel: way size, line size, way step, end of the ways.
++ */
++EXPORT(kexec_dcache)
++	PTR_WD		0, 0, 0, 0
++	.size		kexec_dcache, PTRSIZE * 4
++EXPORT(kexec_scache)
++	PTR_WD		0, 0, 0, 0
++	.size		kexec_scache, PTRSIZE * 4
++EXPORT(kexec_icache)
++	PTR_WD		0, 0, 0, 0
++	.size		kexec_icache, PTRSIZE * 4
++
+ relocate_new_kernel_end:
+ 
+ EXPORT(relocate_new_kernel_size)
+-- 
+2.39.5
+

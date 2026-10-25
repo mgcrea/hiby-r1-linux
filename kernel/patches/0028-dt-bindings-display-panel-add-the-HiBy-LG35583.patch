@@ -1,7 +1,7 @@
 From d0244621f27b5970f1daea953a6d0091822c033f Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:05:52 +0000
-Subject: [PATCH 28/57] dt-bindings: display: panel: add the HiBy LG35583
+Subject: [PATCH 28/60] dt-bindings: display: panel: add the HiBy LG35583
 
 The 480x800 parallel RGB panel of the HiBy R1, set up over a 3-wire SPI
 bus with 16-bit words.

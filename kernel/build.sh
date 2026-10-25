@@ -6,7 +6,8 @@
 #                       prints the load address and entry point for r1jump
 #                       and out/r1-linux.uimage (the same kernel xz-compressed
 #                       as a self-decompressing uImage, for the R1's flash
-#                       kernel slot, which the stock boot loader loads)
+#                       kernel slot, which the stock boot loader loads), and
+#                       the modules under out/modules
 #   build.sh patches    export the volume tree's commits back to patches/
 #
 # The tree lives in the r1-linux Docker volume (Linux needs a case-sensitive
@@ -75,9 +76,14 @@ docker run --rm -v r1-linux:/src -v "$here:/r1" r1-mainline sh -euc '
   # Through a log file: a pipe would hide make failing, and the last
   # image would be reported as new.
   status=0
-  mk -j$(nproc) vmlinux.bin vmlinuz.bin dtbs > $O/make.log 2>&1 || status=$?
+  mk -j$(nproc) vmlinux.bin vmlinuz.bin dtbs modules > $O/make.log 2>&1 || status=$?
   grep -v -E "^\s*$" $O/make.log || true
   [ $status = 0 ] || { echo "make failed"; exit 1; }
+  # The modules, which tools/card-install.sh puts beside the kernel on the card.
+  rm -rf /r1/out/modules
+  mk INSTALL_MOD_PATH=/r1/out/modules INSTALL_MOD_STRIP=1 modules_install > /dev/null
+  # Links to the build tree: exFAT, on the card, has no links.
+  rm -f /r1/out/modules/lib/modules/*/build /r1/out/modules/lib/modules/*/source
   cat $O/arch/mips/boot/vmlinux.bin $O/arch/mips/boot/dts/ingenic/hiby-r1.dtb > /r1/out/r1-linux.bin
   cp $O/System.map /r1/out/System.map
   # The appended DTB must land exactly on __appended_dtb.

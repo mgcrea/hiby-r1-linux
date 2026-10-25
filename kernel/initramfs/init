@@ -50,7 +50,7 @@ if [ -n "$mtd" ] && [ ! -e $ML/no-rom ] && mount -t squashfs -o ro /dev/mtdblock
 	ln -s /rom/lib /lib
 	ln -s /rom/usr/lib /usr/lib
 	ln -s /rom/usr/resource/fonts/default.otf /usr/resource/fonts/default.otf
-	export PATH=$PATH:/rom/usr/bin:/rom/usr/libexec/bluetooth
+	export PATH=$PATH:/rom/usr/bin:/rom/usr/sbin:/rom/usr/libexec/bluetooth
 else
 	echo "system: the card"
 	ln -s $ML/lib /lib
@@ -63,6 +63,10 @@ fi
 cp $ML/lib/firmware/brcm/BCM43430A1.hcd /tmp/firmware/brcm/ 2>/dev/null ||
 	cp /rom/lib/firmware/brcm/BCM43430A1.hcd /tmp/firmware/brcm/ 2>/dev/null
 echo -n /tmp/firmware > /sys/module/firmware_class/parameters/path
+# Modules come from beside the card's kernel (r1-modprobe), for Wi-Fi
+# (r1-wifi, which r1player runs). Wi-Fi's firmware is in /lib/firmware,
+# the kernel's own fallback path, from the system image.
+echo /sbin/r1-modprobe > /proc/sys/kernel/modprobe
 # What has to outlive a restart lives on the card, in $R1_STATE: r1player
 # copies its settings and scores there, and bluetoothd's pairings, in a
 # short read-write window. Put them back where r1player and bluetoothd
@@ -89,6 +93,24 @@ done
 # every boot.
 # This kernel came up: clear the kexec flag (r1-loader).
 /sbin/r1-loader done
+
+# A log of this start on the card, 30 s in, for the last five starts
+# (/.r1-mainline/logs/boot.0 is this one): what the kernel said about USB
+# and the SD cards, and the USB state, so that a start that never reached
+# the computer can be read afterwards. Skipped while the card is shared.
+( sleep 30
+	log=/tmp/boot.log
+	{ echo "== $(uname -r), up $(cut -d' ' -f1 /proc/uptime) s"
+	dmesg | grep -i -E 'r1-loader|dwc2|usb|udc|mmc|exfat|brcm|error|fail|timeout'
+	echo "== udc: $(cat /sys/class/udc/*/state 2>&1), usb power: $(cat /sys/class/power_supply/axp20x-usb/online 2>&1)"
+	echo "== usb.log"; cat /tmp/usb.log; echo "== adb.log"; tail -n 5 /tmp/adb.log
+	free; } > $log 2>&1
+	grep -q ' /mnt/sd_0 ' /proc/mounts && [ ! -e /tmp/sd-shared ] &&
+		mount -o remount,rw /mnt/sd_0 && {
+		mkdir -p $ML/logs
+		for n in 3 2 1 0; do [ -f $ML/logs/boot.$n ] && mv $ML/logs/boot.$n $ML/logs/boot.$((n + 1)); done
+		cp $log $ML/logs/boot.0
+		sync; mount -o remount,ro /mnt/sd_0; } ) &
 
 # It runs from a copy in RAM, which each restart takes again from the card
 # (killing it picks up a new build), unless the card is with the computer.

@@ -1,0 +1,51 @@
+#!/bin/sh
+# Wi-Fi under mainline: the AP6212's BCM43430A1 on MSC0, through brcmfmac
+# (modules beside the card's kernel, r1-modprobe) and the stock
+# wpa_supplicant (from the system image), with busybox's udhcpc.
+#   r1-wifi on     load the driver and start wpa_supplicant, then udhcpc
+#   r1-wifi off    stop both and unload the driver
+# The networks are /.r1-mainline/wifi.conf on the card (wpa_supplicant's
+# format), copied to RAM: the card may go to a computer meanwhile.
+ML=/mnt/sd_0/.r1-mainline
+CONF=/tmp/wpa_supplicant.conf
+CTRL=/tmp/wpa
+
+case "$1" in
+on)
+	for m in cfg80211 brcmutil brcmfmac; do
+		/sbin/r1-modprobe $m || exit 1
+	done
+	i=0
+	while [ ! -e /sys/class/net/wlan0 ] && [ $i -lt 100 ]; do usleep 100000; i=$((i + 1)); done
+	[ -e /sys/class/net/wlan0 ] || { echo "no wlan0"; exit 1; }
+	command -v wpa_supplicant > /dev/null || { echo "no wpa_supplicant"; exit 1; }
+	if [ -f $ML/wifi.conf ]; then
+		cp $ML/wifi.conf $CONF
+	else
+		printf "ctrl_interface=%s\nupdate_config=1\n" $CTRL > $CONF
+	fi
+	# r1player and wpa_cli talk to it through $CTRL, whatever the card's
+	# copy says.
+	grep -q '^ctrl_interface=' $CONF || sed -i "1i ctrl_interface=$CTRL" $CONF
+	ip link set wlan0 up
+	wpa_supplicant -B -Dnl80211 -iwlan0 -c$CONF -P/tmp/wpa_supplicant.pid || exit 1
+	# One quick try, then keeps asking in the background until a network answers.
+	udhcpc -b -t 1 -T 1 -i wlan0 -s /sbin/r1-dhcp -p /tmp/udhcpc.pid -x hostname:hiby-r1 > /dev/null
+	echo "Wi-Fi on"
+	;;
+off)
+	for p in udhcpc wpa_supplicant; do
+		[ -f /tmp/$p.pid ] && kill $(cat /tmp/$p.pid) 2>/dev/null
+		rm -f /tmp/$p.pid
+	done
+	ip link set wlan0 down 2>/dev/null
+	for m in brcmfmac_wcc brcmfmac_cyw brcmfmac_bca brcmfmac brcmutil cfg80211; do
+		grep -q "^$m " /proc/modules && rmmod $m
+	done
+	echo "Wi-Fi off"
+	;;
+*)
+	echo "usage: r1-wifi on|off"
+	exit 2
+	;;
+esac

@@ -1,0 +1,16 @@
+#!/bin/sh
+# udhcpc's script (r1-wifi): sets the address, the route and the name
+# servers it is given, and takes them away again.
+case "$1" in
+deconfig)
+	ip addr flush dev $interface
+	;;
+bound|renew)
+	ip addr flush dev $interface
+	ip addr add $ip/${mask:-24} dev $interface
+	[ -n "$router" ] && ip route replace default via ${router%% *} dev $interface
+	: > /etc/resolv.conf
+	for d in $dns; do echo "nameserver $d" >> /etc/resolv.conf; done
+	echo "$interface: $ip" > /tmp/wifi-address
+	;;
+esac

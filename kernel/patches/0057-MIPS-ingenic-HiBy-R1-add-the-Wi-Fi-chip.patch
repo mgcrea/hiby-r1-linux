@@ -1,0 +1,107 @@
+From eb5f08271ee37eb0c6fec5e55a8a513c92ad50eb Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Sun, 25 Oct 2026 09:24:45 +0000
+Subject: [PATCH 57/60] MIPS: ingenic: HiBy R1: add the Wi-Fi chip
+
+The AP6212 module's Wi-Fi half, a BCM43430A1, is on MSC0 over SDIO,
+on the pins the stock device tree gives MSC0 (PB12-PB17, function 0),
+powered by WL_REG_ON on PB3. It shares Bluetooth's 32 kHz sleep clock.
+No host-wake line from the chip is known, so it uses in-band SDIO
+interrupts.
+
+MSC0 probes before MSC1, which would make the SD card mmc1 and its block
+device mmcblk1: aliases keep it mmc0.
+---
+ arch/mips/boot/dts/ingenic/hiby-r1.dts | 55 +++++++++++++++++++++++++-
+ 1 file changed, 54 insertions(+), 1 deletion(-)
+
+diff --git a/arch/mips/boot/dts/ingenic/hiby-r1.dts b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+index 2f29476..ade7a56 100644
+--- a/arch/mips/boot/dts/ingenic/hiby-r1.dts
++++ b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+@@ -11,6 +11,15 @@ / {
+ 	compatible = "hiby,r1", "ingenic,x1600";
+ 	model = "HiBy R1";
+ 
++	/*
++	 * The SD card stays mmc0 (and mmcblk0, which init mounts) now that
++	 * MSC0, which probes first, has the Wi-Fi chip.
++	 */
++	aliases {
++		mmc0 = &mmc1;
++		mmc1 = &mmc0;
++	};
++
+ 	chosen {
+ 		/* clk_ignore_unused: no clock driver may gate what the display uses. */
+ 		bootargs = "console=tty0 loglevel=8 clk_ignore_unused";
+@@ -184,6 +193,16 @@ vmmc: regulator-sd {
+ 		startup-delay-us = <1000>;
+ 	};
+ 
++	/*
++	 * WL_REG_ON (PB3), which powers the Wi-Fi half of the AP6212. Its 32 kHz
++	 * sleep clock is Bluetooth's (PC26).
++	 */
++	wlan_pwrseq: pwrseq-wlan {
++		compatible = "mmc-pwrseq-simple";
++		reset-gpios = <&gpb 3 GPIO_ACTIVE_LOW>;
++		post-power-on-delay-ms = <200>;
++	};
++
+ 	/* The DAC's bus is bit-banged, as on the stock firmware. */
+ 	i2c-dac {
+ 		compatible = "i2c-gpio";
+@@ -432,7 +451,35 @@ &i2s {
+ 	pinctrl-0 = <&pins_i2s>;
+ };
+ 
+-/* The SD card slot. MSC0 is probably the Wi-Fi chip's SDIO link. */
++/*
++ * The AP6212's Wi-Fi (a BCM43430A1) over SDIO, on the stock tree's MSC0
++ * pins (PB12-PB17, function 0). No line from the chip's host-wake output is
++ * known: its interrupts come in band, over DAT1.
++ */
++&mmc0 {
++	status = "okay";
++
++	#address-cells = <1>;
++	#size-cells = <0>;
++
++	pinctrl-names = "default";
++	pinctrl-0 = <&pins_msc0>;
++
++	bus-width = <4>;
++	max-frequency = <50000000>;
++	cap-sd-highspeed;
++	cap-sdio-irq;
++	non-removable;
++	keep-power-in-suspend;
++	mmc-pwrseq = <&wlan_pwrseq>;
++
++	wifi@1 {
++		compatible = "brcm,bcm4329-fmac";
++		reg = <1>;
++	};
++};
++
++/* The SD card slot. */
+ &mmc1 {
+ 	status = "okay";
+ 
+@@ -622,6 +669,12 @@ pins_uart0: uart0 {
+ 		bias-disable;
+ 	};
+ 
++	pins_msc0: msc0 {
++		function = "mmc0";
++		groups = "mmc0-1bit-b", "mmc0-4bit-b";
++		bias-pull-up;
++	};
++
+ 	pins_msc1: msc1 {
+ 		function = "mmc1";
+ 		groups = "mmc1-1bit", "mmc1-4bit";
+-- 
+2.39.5
+

@@ -1,7 +1,7 @@
 From a1659487e77c53de72dc4abe20ed449c3113470b Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:16:33 +0000
-Subject: [PATCH 14/57] dmaengine: dma-jz4780: fix a NULL dereference in
+Subject: [PATCH 14/60] dmaengine: dma-jz4780: fix a NULL dereference in
  tx_status after terminate
 
 jz4780_dma_terminate_all() clears jzchan->desc, and since sound's

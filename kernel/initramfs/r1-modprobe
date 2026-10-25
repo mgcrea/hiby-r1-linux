@@ -1,0 +1,13 @@
+#!/bin/sh
+# The kernel's modprobe (/proc/sys/kernel/modprobe, set by init), for the
+# modules a driver asks for itself (brcmfmac its vendor part, brcmfmac-wcc
+# or -cyw). Modules match one kernel build exactly, so they sit beside the
+# card's kernel, in /.r1-mainline/modules/<release>, not in the system
+# image; busybox's modprobe only looks in /lib/modules, which is /rom's.
+#   r1-modprobe [-q] [--] NAME
+for name; do :; done
+dir=/mnt/sd_0/.r1-mainline/modules/$(uname -r)
+grep -q "^$(echo $name | tr - _) " /proc/modules && exit 0
+ko=$(find $dir -name "$name.ko" 2>/dev/null | head -1)
+[ -n "$ko" ] || { echo "r1-modprobe: no $name in $dir" > /dev/kmsg; exit 1; }
+exec insmod $ko
