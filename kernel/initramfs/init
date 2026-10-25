@@ -63,10 +63,8 @@ fi
 cp $ML/lib/firmware/brcm/BCM43430A1.hcd /tmp/firmware/brcm/ 2>/dev/null ||
 	cp /rom/lib/firmware/brcm/BCM43430A1.hcd /tmp/firmware/brcm/ 2>/dev/null
 echo -n /tmp/firmware > /sys/module/firmware_class/parameters/path
-# Modules come from beside the card's kernel (r1-modprobe), for Wi-Fi
-# (r1-wifi, which r1player runs). Wi-Fi's firmware is in /lib/firmware,
-# the kernel's own fallback path, from the system image.
-echo /sbin/r1-modprobe > /proc/sys/kernel/modprobe
+# Wi-Fi's firmware is in /lib/firmware, the kernel's own fallback path,
+# from the system image (r1-wifi, which r1player runs).
 # What has to outlive a restart lives on the card, in $R1_STATE: r1player
 # copies its settings and scores there, and bluetoothd's pairings, in a
 # short read-write window. Put them back where r1player and bluetoothd
@@ -83,6 +81,8 @@ done
 # The USB gadget: serial shell, ADB when there is an adbd, and the card
 # reader r1-share hands the card to.
 /sbin/r1-usb > /tmp/usb.log 2>&1
+# Wi-Fi is off until r1player turns it on: the chip powered down.
+/sbin/r1-wifi off > /dev/null 2>&1
 # Bluetooth, in the background, since setting the chip up takes a few
 # seconds. Its tools (bluetoothctl, bluealsa-cli) are on r1player's PATH.
 /sbin/r1-bt > /tmp/bt.log 2>&1 &
@@ -102,6 +102,8 @@ done
 	log=/tmp/boot.log
 	{ echo "== $(uname -r), up $(cut -d' ' -f1 /proc/uptime) s"
 	dmesg | grep -i -E 'r1-loader|dwc2|usb|udc|mmc|exfat|brcm|error|fail|timeout'
+	echo "== the flash kernel's start (pstore)"
+	grep -a -i -E 'dwc2|usb|r1-loader' /sys/fs/pstore/console-ramoops-0 2>/dev/null
 	echo "== udc: $(cat /sys/class/udc/*/state 2>&1), usb power: $(cat /sys/class/power_supply/axp20x-usb/online 2>&1)"
 	echo "== usb.log"; cat /tmp/usb.log; echo "== adb.log"; tail -n 5 /tmp/adb.log
 	free; } > $log 2>&1

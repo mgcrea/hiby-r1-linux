@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 # Build mainline Linux for the HiBy R1.
 #
-#   build.sh            reset the tree to upstream, apply patches/, build;
-#                       writes out/r1-linux.bin (vmlinux.bin + DTB) and
-#                       prints the load address and entry point for r1jump
-#                       and out/r1-linux.uimage (the same kernel xz-compressed
-#                       as a self-decompressing uImage, for the R1's flash
-#                       kernel slot, which the stock boot loader loads), and
-#                       the modules under out/modules
+#   build.sh            reset the tree to upstream, apply patches/, build
+#                       the two kernels: out/r1-linux.uimage, the flash
+#                       kernel (r1.config), xz-compressed as a
+#                       self-decompressing uImage for the R1's kernel slot,
+#                       which the stock boot loader loads; and
+#                       out/r1-linux.bin, the card kernel (r1.config and
+#                       r1-card.config: Wi-Fi), vmlinux.bin with the DTB,
+#                       which the flash kernel kexecs (and r1jump can load),
+#                       with its System.map and release
 #   build.sh patches    export the volume tree's commits back to patches/
 #
 # The tree lives in the r1-linux Docker volume (Linux needs a case-sensitive
-# filesystem); patches/, r1.config and initramfs/ here are the source of
+# filesystem); patches/, r1.config, r1-card.config and initramfs/ here are the source of
 # truth. To change the kernel, commit in the volume tree on branch r1, then
 # run `build.sh patches`.
 set -euo pipefail
@@ -19,6 +21,8 @@ here="$(cd "$(dirname "$0")" && pwd)"
 version=7.3
 mkdir -p "$here/out"
 
+# Everything below runs as one single-quoted sh -c script: an apostrophe in
+# it, comments included, ends the script there.
 docker run --rm -v r1-linux:/src -v "$here:/r1" r1-mainline sh -euc '
   version='"$version"'
   cd /src
@@ -48,67 +52,98 @@ docker run --rm -v r1-linux:/src -v "$here:/r1" r1-mainline sh -euc '
     cat /r1/patches/*.patch | sha256sum > $stamp
   fi
 
-  # Native arm64 build: /src/build held an amd64 (emulated) build.
-  O=/src/build-arm64
+  # Native arm64 builds (/src/build held an amd64, emulated, one): the
+  # flash kernel in build-arm64 (r1.config), the card kernel in build-card
+  # (r1.config, then r1-card.config: Wi-Fi), from the same tree.
+  FLASH=/src/build-arm64
+  CARD=/src/build-card
   mk() { make -s O=$O ARCH=mips CROSS_COMPILE=mipsel-linux-gnu- "$@"; }
-  mkdir -p $O
-  if ! sha256sum /r1/r1.config | cut -d" " -f1 | cmp -s - $O/.r1-config.sha; then
-    echo "configuring"
-    mk cu1000-neo_defconfig
-    scripts/kconfig/merge_config.sh -Q -O $O -m $O/.config /r1/r1.config >/dev/null
-    mk olddefconfig
-    sha256sum /r1/r1.config | cut -d" " -f1 > $O/.r1-config.sha
-  fi
-  # Fail if a requested option did not stick (missing dependency, typo).
+  # configure DIR FRAGMENT...: merges the fragments into cu1000-neo_defconfig
+  # when they changed, then warns about an option that did not stick (a
+  # missing dependency, a typo), going by the last fragment that names it.
   # A disabled option may be absent altogether, which is fine.
-  grep -E "^CONFIG_[A-Z0-9_]+=" /r1/r1.config | while read -r line; do
-    grep -qxF "$line" $O/.config || echo "warning: r1.config: $line did not stick"
-  done
-  grep -E "^# CONFIG_[A-Z0-9_]+ is not set$" /r1/r1.config | cut -d" " -f2 | while read -r opt; do
-    ! grep -q "^$opt=" $O/.config || echo "warning: r1.config: $opt is still enabled"
-  done
-  # Test tools for the initramfs, built against tinyalsa (see Dockerfile).
+  configure() {
+    O=$1; shift
+    mkdir -p $O
+    sum=$(cat "$@" | sha256sum | cut -d" " -f1)
+    if [ "$sum" != "$(cat $O/.r1-config.sha 2>/dev/null)" ]; then
+      echo "configuring $(basename $O)"
+      mk cu1000-neo_defconfig
+      scripts/kconfig/merge_config.sh -Q -O $O -m $O/.config "$@" >/dev/null
+      mk olddefconfig
+      echo $sum > $O/.r1-config.sha
+    fi
+    cat "$@" | awk "/^CONFIG_|^# CONFIG_/ { o = \$1 == \"#\" ? \$2 : \$1; sub(/=.*/, \"\", o); last[o] = \$0 } END { for (o in last) print last[o] }" |
+      while read -r line; do
+        case "$line" in
+        "# "*) opt=${line#\# }; opt=${opt%% *}
+          ! grep -q "^$opt=" $O/.config || echo "warning: $(basename $O): $opt is still enabled" ;;
+        *) grep -qxF "$line" $O/.config || echo "warning: $(basename $O): $line did not stick" ;;
+        esac
+      done
+  }
+  # make TARGET... in $O, through a log file: a pipe would hide make
+  # failing, and the last image would be reported as new.
+  build() {
+    status=0
+    mk -j$(nproc) "$@" > $O/make.log 2>&1 || status=$?
+    grep -v -E "^\s*$" $O/make.log || true
+    [ $status = 0 ] || { echo "make failed in $(basename $O)"; exit 1; }
+  }
+  # The appended DTB must land exactly on __appended_dtb.
+  check_dtb() {
+    dtb=$(grep " __appended_dtb$" $O/System.map | cut -c9-16)
+    [ $((0x$dtb - 0x80100000)) = $(stat -c %s $O/arch/mips/boot/vmlinux.bin) ] || { echo "DTB offset mismatch in $(basename $O)"; exit 1; }
+  }
+
+  configure $FLASH /r1/r1.config
+  # Test tools for the initramfs (which both kernels share), built against
+  # tinyalsa (see Dockerfile); initramfs/list takes them from build-arm64.
   ta=/opt/tinyalsa
-  mipsel-linux-gnu-gcc -static -Os -Wall -I$ta/include -o $O/r1tone /r1/initramfs/r1tone.c $ta/libtinyalsa.a -lm
-  mipsel-linux-gnu-gcc -static -nostdlib -ffreestanding -mno-abicalls -fno-pic -no-pie -Os -Wall -Wl,--build-id=none -o $O/r1kexec /r1/initramfs/r1kexec.c
+  mipsel-linux-gnu-gcc -static -Os -Wall -I$ta/include -o $FLASH/r1tone /r1/initramfs/r1tone.c $ta/libtinyalsa.a -lm
+  mipsel-linux-gnu-gcc -static -nostdlib -ffreestanding -mno-abicalls -fno-pic -no-pie -Os -Wall -Wl,--build-id=none -o $FLASH/r1kexec /r1/initramfs/r1kexec.c
   # The flash writer flash-install.sh pushes to /tmp (not in the image).
   mipsel-linux-gnu-gcc -static -Os -Wall -o /r1/out/r1flash /r1/tools/r1flash.c
-  # Through a log file: a pipe would hide make failing, and the last
-  # image would be reported as new.
-  status=0
-  mk -j$(nproc) vmlinux.bin vmlinuz.bin dtbs modules > $O/make.log 2>&1 || status=$?
-  grep -v -E "^\s*$" $O/make.log || true
-  [ $status = 0 ] || { echo "make failed"; exit 1; }
-  # The modules, which tools/card-install.sh puts beside the kernel on the card.
-  rm -rf /r1/out/modules
-  mk INSTALL_MOD_PATH=/r1/out/modules INSTALL_MOD_STRIP=1 modules_install > /dev/null
-  # Links to the build tree: exFAT, on the card, has no links.
-  rm -f /r1/out/modules/lib/modules/*/build /r1/out/modules/lib/modules/*/source
-  cat $O/arch/mips/boot/vmlinux.bin $O/arch/mips/boot/dts/ingenic/hiby-r1.dtb > /r1/out/r1-linux.bin
-  cp $O/System.map /r1/out/System.map
-  # The appended DTB must land exactly on __appended_dtb.
-  dtb=$(grep " __appended_dtb$" $O/System.map | cut -c9-16)
-  [ $((0x$dtb - 0x80100000)) = $(stat -c %s $O/arch/mips/boot/vmlinux.bin) ] || { echo "DTB offset mismatch"; exit 1; }
-  load=$(mipsel-linux-gnu-readelf -l $O/vmlinux | awk "/LOAD/ {print \$3; exit}")
-  entry=$(mipsel-linux-gnu-readelf -h $O/vmlinux | awk "/Entry point/ {print \$4}")
-  echo "out/r1-linux.bin: $(stat -c %s /r1/out/r1-linux.bin) bytes, load $load, entry $entry"
+  build vmlinux.bin vmlinuz.bin dtbs
+  check_dtb
 
   # The flash image: the decompressor (vmlinuz) with the DTB after it, where
   # it looks for one (by its magic; vmlinuz is stripped, so the offset cannot
   # be checked here) and moves it behind the kernel it unpacks, in a legacy
   # uImage header: the stock SPL loads it by the header (load address,
   # entry, size; it checks no CRC) into memory and jumps to it.
+  # Its device tree has no Wi-Fi: with it (MSC0 and its mmc-pwrseq), some
+  # starts after a restart had no USB, the dwc2 core reset timing out until
+  # a power-off (1 in 22 for this morning flash kernel plus the Wi-Fi
+  # nodes); without, 0 in 97 over three flash kernels (2026-10-25,
+  # docs/kernel.md, "USB lost at some starts").
+  dtbf=$O/hiby-r1-flash.dtb
+  cp $O/arch/mips/boot/dts/ingenic/hiby-r1.dtb $dtbf
+  fdtput -t s $dtbf /mmc@13450000 status disabled
+  fdtput -t s $dtbf /pwrseq-wlan status disabled
   z=$O/vmlinuz
   zload=$(mipsel-linux-gnu-readelf -l $z | awk "/LOAD/ {print \$3; exit}")
   zentry=$(mipsel-linux-gnu-readelf -h $z | awk "/Entry point/ {print \$4}")
-  cat $O/arch/mips/boot/vmlinuz.bin $O/arch/mips/boot/dts/ingenic/hiby-r1.dtb > $O/vmlinuz-dtb.bin
+  cat $O/arch/mips/boot/vmlinuz.bin $dtbf > $O/vmlinuz-dtb.bin
   # The decompressor copies the DTB to __appended_dtb in the kernel: it must
   # end below the decompressor, which is still running.
-  dtbsize=$(stat -c %s $O/arch/mips/boot/dts/ingenic/hiby-r1.dtb)
+  dtbsize=$(stat -c %s $dtbf)
   [ $((0x$dtb + dtbsize)) -le $((zload)) ] || { echo "the DTB copy would overwrite the decompressor"; exit 1; }
   python3 /r1/tools/mkuimage.py $zload $zentry "Linux-$version r1" $O/vmlinuz-dtb.bin /r1/out/r1-linux.uimage
   # The kernel slot (mtd1) is 5 MiB.
   size=$(stat -c %s /r1/out/r1-linux.uimage)
   [ $size -le 5242880 ] || { echo "out/r1-linux.uimage: $size bytes, over the 5 MiB kernel slot"; exit 1; }
   echo "out/r1-linux.uimage: $size bytes of 5242880, load $zload, entry $zentry"
+
+  # The card kernel, which the flash one kexecs: vmlinux.bin with the DTB.
+  configure $CARD /r1/r1.config /r1/r1-card.config
+  build vmlinux.bin dtbs
+  check_dtb
+  cat $O/arch/mips/boot/vmlinux.bin $O/arch/mips/boot/dts/ingenic/hiby-r1.dtb > /r1/out/r1-linux.bin
+  cp $O/System.map /r1/out/System.map
+  cp $O/include/config/kernel.release /r1/out/release
+  rm -rf /r1/out/modules
+  load=$(mipsel-linux-gnu-readelf -l $O/vmlinux | awk "/LOAD/ {print \$3; exit}")
+  entry=$(mipsel-linux-gnu-readelf -h $O/vmlinux | awk "/Entry point/ {print \$4}")
+  echo "out/r1-linux.bin: $(stat -c %s /r1/out/r1-linux.bin) bytes, load $load, entry $entry"
 ' sh "${1:-}"

@@ -1,20 +1,27 @@
 #!/bin/sh
-# Wi-Fi under mainline: the AP6212's BCM43430A1 on MSC0, through brcmfmac
-# (modules beside the card's kernel, r1-modprobe) and the stock
-# wpa_supplicant (from the system image), with busybox's udhcpc.
-#   r1-wifi on     load the driver and start wpa_supplicant, then udhcpc
-#   r1-wifi off    stop both and unload the driver
+# Wi-Fi under mainline: the AP6212's BCM43430A1 on MSC0, through the card
+# kernel's brcmfmac (the flash kernel has none) and the stock wpa_supplicant
+# (from the system image), with busybox's udhcpc.
+#   r1-wifi on     power the chip up, start wpa_supplicant, then udhcpc
+#   r1-wifi off    stop both and power the chip down
 # The networks are /.r1-mainline/wifi.conf on the card (wpa_supplicant's
 # format), copied to RAM: the card may go to a computer meanwhile.
 ML=/mnt/sd_0/.r1-mainline
 CONF=/tmp/wpa_supplicant.conf
 CTRL=/tmp/wpa
+# MSC0, whose removal powers the chip down (its mmc-pwrseq holds WL_REG_ON
+# low) and takes brcmfmac off it: off leaves it unbound, so the next on
+# starts the chip afresh. A chip still running its firmware from before
+# connected to nothing.
+MSC=/sys/bus/platform/drivers/jz4740-mmc
 
 case "$1" in
 on)
-	for m in cfg80211 brcmutil brcmfmac; do
-		/sbin/r1-modprobe $m || exit 1
-	done
+	if [ ! -e $MSC/13450000.mmc ]; then
+		echo 13450000.mmc > $MSC/bind
+		i=0
+		while [ ! -e /sys/bus/sdio/devices/mmc1:0001:1 ] && [ $i -lt 50 ]; do usleep 100000; i=$((i + 1)); done
+	fi
 	i=0
 	while [ ! -e /sys/class/net/wlan0 ] && [ $i -lt 100 ]; do usleep 100000; i=$((i + 1)); done
 	[ -e /sys/class/net/wlan0 ] || { echo "no wlan0"; exit 1; }
@@ -29,8 +36,9 @@ on)
 	grep -q '^ctrl_interface=' $CONF || sed -i "1i ctrl_interface=$CTRL" $CONF
 	ip link set wlan0 up
 	wpa_supplicant -B -Dnl80211 -iwlan0 -c$CONF -P/tmp/wpa_supplicant.pid || exit 1
-	# One quick try, then keeps asking in the background until a network answers.
-	udhcpc -b -t 1 -T 1 -i wlan0 -s /sbin/r1-dhcp -p /tmp/udhcpc.pid -x hostname:hiby-r1 > /dev/null
+	# One quick try, then keeps asking in the background every 3 s until a
+	# network answers (the first try usually goes before the association).
+	udhcpc -b -t 1 -T 1 -A 3 -i wlan0 -s /sbin/r1-dhcp -p /tmp/udhcpc.pid -x hostname:hiby-r1 > /dev/null
 	echo "Wi-Fi on"
 	;;
 off)
@@ -38,10 +46,10 @@ off)
 		[ -f /tmp/$p.pid ] && kill $(cat /tmp/$p.pid) 2>/dev/null
 		rm -f /tmp/$p.pid
 	done
-	ip link set wlan0 down 2>/dev/null
-	for m in brcmfmac_wcc brcmfmac_cyw brcmfmac_bca brcmfmac brcmutil cfg80211; do
-		grep -q "^$m " /proc/modules && rmmod $m
-	done
+	# Each step given 5 s: on a broken SDIO bus the driver blocks for good.
+	timeout 5 ip link set wlan0 down 2>/dev/null
+	rm -f /tmp/wifi-address
+	[ -e $MSC/13450000.mmc ] && timeout 5 sh -c "echo 13450000.mmc > $MSC/unbind"
 	echo "Wi-Fi off"
 	;;
 *)

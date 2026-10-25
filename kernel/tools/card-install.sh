@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Put the kernel from build.sh on the R1's SD card, over ADB from mainline:
-# out/r1-linux.bin, its entry point (/.r1-mainline/entry) and its modules
-# (/.r1-mainline/modules/<release>, which r1-modprobe loads: they match this
-# build only, so older releases are removed). The flash kernel kexecs it at
+# Put the card kernel from build.sh on the R1's SD card, over ADB from
+# mainline: out/r1-linux.bin and its entry point (/.r1-mainline/entry),
+# removing what earlier builds left (/.r1-mainline/modules, from when Wi-Fi
+# was modules: docs/kernel.md, "Wi-Fi"). The flash kernel kexecs it at
 # the next start; one that doesn't come up makes the next start stay on the
 # flash kernel (docs/kernel.md, "Replacing stock in flash").
 #
@@ -17,8 +17,8 @@ bin="$out/r1-linux.bin"
 # System.map's addresses are sign-extended to 64 bits: the low 32.
 entry=$(awk '$3 == "kernel_entry" { print substr($1, length($1) - 7) }' "$out/System.map")
 [ ${#entry} = 8 ] || { echo "no kernel_entry in out/System.map"; exit 1; }
-rel=$(ls "$out/modules/lib/modules" 2>/dev/null | head -1)
-[ -n "$rel" ] || { echo "no modules in out/modules: run build.sh"; exit 1; }
+rel=$(cat "$out/release" 2>/dev/null)
+[ -n "$rel" ] || { echo "no out/release: run build.sh"; exit 1; }
 md5=$(md5 -q "$bin" 2>/dev/null || md5sum "$bin" | cut -d' ' -f1)
 
 r1() { adb shell "$1" < /dev/null | tr -d '\r'; }
@@ -35,10 +35,9 @@ r1 "mount -o remount,rw $sd"
 trap 'r1 "sync; mount -o remount,ro $sd" >/dev/null' EXIT
 adb push "$bin" "$dir/r1-linux.bin" >/dev/null
 r1 "echo 0x$entry > $dir/entry"
-r1 "mkdir -p $dir/modules && cd $dir/modules && for d in *; do [ \"\$d\" = '$rel' ] || rm -rf \"\$d\"; done"
-adb push "$out/modules/lib/modules/$rel" "$dir/modules/" >/dev/null
+r1 "rm -rf $dir/modules"
 [ "$(r1 "md5sum $dir/r1-linux.bin | cut -d' ' -f1")" = "$md5" ] || { echo "the copy on the card differs"; exit 1; }
-echo "on the card: r1-linux.bin ($md5), entry 0x$entry, modules $rel"
+echo "on the card: r1-linux.bin ($md5, $rel), entry 0x$entry"
 if [ "${1:-}" = --reboot ]; then
 	r1 "sync; mount -o remount,ro $sd"
 	trap - EXIT

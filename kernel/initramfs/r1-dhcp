@@ -4,6 +4,7 @@
 case "$1" in
 deconfig)
 	ip addr flush dev $interface
+	rm -f /tmp/wifi-address
 	;;
 bound|renew)
 	ip addr flush dev $interface
@@ -12,5 +13,19 @@ bound|renew)
 	: > /etc/resolv.conf
 	for d in $dns; do echo "nameserver $d" >> /etc/resolv.conf; done
 	echo "$interface: $ip" > /tmp/wifi-address
+	# The R1 has no clock that keeps time: take it from a web server's
+	# Date header (busybox has no NTP client), in the background. By
+	# address: busybox's wget crashes looking a name up (a static glibc
+	# can't load its resolver), nslookup doesn't; and -T crashes it too.
+	# Tried a few times: right as the address comes, the lookup can fail.
+	( h=www.google.com
+	for i in 1 2 3 4 5; do
+		sleep 3
+		a=$(nslookup $h 2>/dev/null | sed -n "/^Name/,\$s/^Address: \([0-9.]*\)$/\1/p" | head -1)
+		[ -n "$a" ] || continue
+		d=$(timeout 10 wget -S -q -O /dev/null --header "Host: $h" http://$a/ 2>&1 | sed -n 's/^ *Date: //p' | head -1)
+		[ -n "$d" ] && date -u -D '%a, %d %b %Y %H:%M:%S GMT' -s "$d" > /dev/null &&
+			echo "$d" > /tmp/wifi-clock && break
+	done ) &
 	;;
 esac

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# One kernel attempt on the R1: build, put the kernel and its modules on the
-# card (card-install.sh), restart, wait for ADB, and report how long each
+# One kernel attempt on the R1: build, put the card kernel on the card
+# (card-install.sh), restart, wait for ADB, and report how long each
 # stage took, which kernel came up, the kernel log lines that match, and,
 # when the start stayed on the flash kernel, the failed boot's log (pstore).
 #
@@ -30,7 +30,7 @@ if [ $build = 1 ]; then
 	"$here/../build.sh" | grep -v '^configuring$' || exit 1
 	echo "== build: $(($(t) - start)) s"
 fi
-rel=$(ls "$here/../out/modules/lib/modules" | head -1)
+rel=$(cat "$here/../out/release")
 
 s=$(t)
 "$here/card-install.sh" --reboot
