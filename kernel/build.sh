@@ -70,6 +70,8 @@ docker run --rm -v r1-linux:/src -v "$here:/r1" r1-mainline sh -euc '
   ta=/opt/tinyalsa
   mipsel-linux-gnu-gcc -static -Os -Wall -I$ta/include -o $O/r1tone /r1/initramfs/r1tone.c $ta/libtinyalsa.a -lm
   mipsel-linux-gnu-gcc -static -nostdlib -ffreestanding -mno-abicalls -fno-pic -no-pie -Os -Wall -Wl,--build-id=none -o $O/r1kexec /r1/initramfs/r1kexec.c
+  # The flash writer flash-install.sh pushes to /tmp (not in the image).
+  mipsel-linux-gnu-gcc -static -Os -Wall -o /r1/out/r1flash /r1/tools/r1flash.c
   # Through a log file: a pipe would hide make failing, and the last
   # image would be reported as new.
   status=0
