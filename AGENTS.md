@@ -14,3 +14,4 @@
 - Over ADB, avoid anything that cuts USB or needs much RAM: with an app and Bluetooth up, about 21 MB is free, and `r1kexec` from a running system gets OOM-killed.
 - A card kernel that doesn't come up makes every later start stay on the flash kernel, until `r1-linux.bin` changes or `/.r1-mainline/kexec-pending` is removed. Volume Down held at power-on also stays there. The last boot's log is in `/sys/fs/pstore`. Volume Up held at power-on, with an `r1.upt` at the card root, reflashes that update through HiBy's recovery.
 - `mksystem.py` and `sdsync.sh` take the app's build from `R1_APP`.
+- For now the flash kernel is minimal (`kernel/r1.config`) and Wi-Fi is only in the card kernel (`kernel/r1-card.config`). With the Wi-Fi nodes or `CONFIG_MODULES` in the flash kernel, some starts lost USB until a power-off, cause not found (`docs/kernel.md`, "USB lost at some starts"). The goal is a complete flash kernel: test any addition to it with restart loops.
