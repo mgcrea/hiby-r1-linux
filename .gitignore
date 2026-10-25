@@ -7,3 +7,4 @@
 /firmware/device/
 /spike/target/
 .DS_Store
+__pycache__/
