@@ -6,6 +6,62 @@
 # the gadget has no ADB.
 G=/sys/kernel/config/usb_gadget/r1
 
+# dwc2's probe sometimes fails at boot: its core reset times out
+# ("dwc2_core_reset: HANG! Soft Reset timeout GRSTCTL_CSFTRST", error -16;
+# 4 starts of about 20 on 2026-10-25, all card kernels after kexec),
+# and the R1 then has no USB at all. Probing again fails the same way, and
+# the next start has always worked. So: probe again after resetting the
+# whole USB block (SRBC's OTG_SR, then the PHY's POR in USBPCR), and if
+# that fails too, restart once. The word at 0x03ff7ff8 (ramoops, beside the
+# boot marks; a restart keeps it, a power-off doesn't) says it was tried.
+log() { echo "r1-usb: $*" > /dev/kmsg; }
+udc() { [ -n "$(ls /sys/class/udc 2>/dev/null)" ]; }
+TRIED=0x03ff7ff8
+setbits() { devmem $1 32 $(( $(devmem $1 32) | $2 )); }
+# The registers USB depends on, for the boot log: CPM's CLKGR, OPCR (PHY gate
+# and suspend), USBPCR, USBPCR1 and SRBC, then dwc2's GUSBCFG and GRSTCTL.
+regs() {
+	r=; for a in 0x10000020 0x10000024 0x1000003c 0x10000048 0x100000c4 0x1350000c 0x13500010; do r="$r $(devmem $a 32)"; done
+	log "$1: clkgr opcr usbpcr usbpcr1 srbc gusbcfg grstctl:$r"
+}
+clearbits() { devmem $1 32 $(( $(devmem $1 32) & ~$2 )); }
+regs "at start"
+if ! udc; then
+	log "no USB controller: resetting the USB block and probing dwc2 again"
+	setbits 0x100000c4 0x1000; usleep 10000; clearbits 0x100000c4 0x1000
+	setbits 0x1000003c 0x400000; usleep 100; clearbits 0x1000003c 0x400000; usleep 1000
+	echo 13500000.usb > /sys/bus/platform/drivers/dwc2/bind 2>/dev/null
+	sleep 1
+	regs "after the reset"
+	if udc; then
+		log "USB is back after the reset"
+	elif [ $(($(devmem $TRIED 32))) != $((0x05b00001)) ]; then
+		log "still no USB controller: restarting"
+		# What this start saw, on the card: the restart comes before
+		# init's boot log.
+		ML=/mnt/sd_0/.r1-mainline
+		if grep -q ' /mnt/sd_0 ' /proc/mounts && mount -o remount,rw /mnt/sd_0; then
+			mkdir -p $ML/logs
+			{ echo "== $(uname -r), up $(cut -d' ' -f1 /proc/uptime) s"
+			dmesg | grep -i -E 'dwc2|usb|r1-usb|r1-loader'
+			echo "== the flash kernel's start (pstore)"
+			grep -a -i -E 'dwc2|usb|r1-loader' /sys/fs/pstore/console-ramoops-0 2>/dev/null
+			} >> $ML/logs/usb-fail.log
+			sync; mount -o remount,ro /mnt/sd_0
+		fi
+		devmem $TRIED 32 0x05b00001
+		# This kernel came up: don't let the flash kernel take the
+		# restart for a failed one (r1-loader).
+		/sbin/r1-loader done
+		sync
+		/sbin/r1-reboot
+		sleep 60
+	else
+		log "still no USB controller, and a restart didn't help: carrying on without USB"
+	fi
+fi
+udc && devmem $TRIED 32 0
+
 mount -t configfs none /sys/kernel/config
 mkdir $G && cd $G || exit 1
 # Stock's ADB IDs. tools/r1sh.py finds the port by the product name, so it
