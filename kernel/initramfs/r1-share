@@ -14,6 +14,9 @@ LUN=/sys/kernel/config/usb_gadget/r1/functions/mass_storage.0/lun.0
 SD=/mnt/sd_0
 DEV=/dev/mmcblk0p1
 udc() { cat /sys/class/udc/*/state 2>/dev/null; }
+# USB power, from the PMIC: gone at once when the cable comes out, while the
+# controller can stay `configured` until the next plug-in (seen 2026-10-25).
+vbus() { cat /sys/class/power_supply/axp20x-usb/online 2>/dev/null; }
 back() { mount -t exfat -o ro $DEV $SD || { echo "the card didn't mount"; rm -f /tmp/sd-shared; exit 3; }; rm -f /tmp/sd-shared; }
 
 [ "$(udc)" = configured ] || { echo "no computer"; exit 1; }
@@ -34,10 +37,11 @@ if ! echo $DEV > $LUN/file; then
 fi
 echo shared
 # The computer's eject empties lun.0/file. A computer asleep leaves the
-# gadget suspended, with the card still mounted there.
+# gadget suspended, with the card still mounted there, and the power on.
 while :; do
 	usleep 300000
 	[ -n "$(cat $LUN/file)" ] || { echo ejected; break; }
+	[ "$(vbus)" = 0 ] && { echo "unplugged"; echo 1 > $LUN/forced_eject; break; }
 	case "$(udc)" in
 	configured | suspended) ;;
 	*) echo "unplugged"; echo 1 > $LUN/forced_eject; break ;;
