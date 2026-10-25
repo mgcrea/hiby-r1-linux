@@ -26,7 +26,8 @@ CPSPPR=0x10000038	# CPSPR's write lock: 0x5a5a opens it, 0xa5a5 closes it
 PENDING=0x52314b58	# "R1KX"
 
 # To the kernel log as well, where dmesg keeps it.
-log() { echo "r1-loader: $*"; echo "r1-loader: $*" > /dev/kmsg; }
+# The last line also goes to /tmp/r1-loader.last, for r1player's Debug rows.
+log() { echo "r1-loader: $*"; echo "r1-loader: $*" > /dev/kmsg; echo "$*" > /tmp/r1-loader.last; }
 
 MARK=$ML/kexec-pending
 # Runs "$@" with the card writable for that moment.
