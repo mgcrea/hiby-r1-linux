@@ -1,4 +1,4 @@
-From 6fb13e16574d3a148e3f37227940e1b4cdd4862e Mon Sep 17 00:00:00 2001
+From 3bd10d5ab69e7d96814c4f69c10b6e15be174e88 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sun, 25 Oct 2026 09:55:22 +0000
 Subject: [PATCH 58/60] MIPS: kexec: write the new kernel back from the caches

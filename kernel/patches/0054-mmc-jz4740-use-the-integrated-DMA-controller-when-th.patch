@@ -1,4 +1,4 @@
-From 56081f5c72f2286b44a890e5e79ad68067cd9166 Mon Sep 17 00:00:00 2001
+From 033369e25f422b68874e7feab2c1a2f990104b98 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 10:19:16 +0000
 Subject: [PATCH 54/60] mmc: jz4740: use the integrated DMA controller when
@@ -25,11 +25,11 @@ On the HiBy R1 (X1600, an SDHC card at 50 MHz, 4-bit), reads go from 17.3
 to 22.5 MB/s and writes from 13.9 to 18.2 MB/s, with the CPU free; as a
 USB mass storage gadget, writes from a computer from 4.4 to 10.7 MB/s.
 ---
- drivers/mmc/host/jz4740_mmc.c | 171 ++++++++++++++++++++++++++++++++--
- 1 file changed, 163 insertions(+), 8 deletions(-)
+ drivers/mmc/host/jz4740_mmc.c | 174 ++++++++++++++++++++++++++++++++--
+ 1 file changed, 166 insertions(+), 8 deletions(-)
 
 diff --git a/drivers/mmc/host/jz4740_mmc.c b/drivers/mmc/host/jz4740_mmc.c
-index 6a3c26b..9645337 100644
+index 6a3c26b..dfe8a6d 100644
 --- a/drivers/mmc/host/jz4740_mmc.c
 +++ b/drivers/mmc/host/jz4740_mmc.c
 @@ -24,6 +24,7 @@
@@ -144,7 +144,7 @@ index 6a3c26b..9645337 100644
  			data->sg,
  			data->sg_len,
  			dir);
-@@ -371,13 +408,100 @@ static int jz4740_mmc_start_dma_transfer(struct jz4740_mmc_host *host,
+@@ -371,13 +408,103 @@ static int jz4740_mmc_start_dma_transfer(struct jz4740_mmc_host *host,
  	return -ENOMEM;
  }
  
@@ -155,6 +155,9 @@ index 6a3c26b..9645337 100644
 + * it is set up: on the X1600, after a kexec that followed heavy writes, an
 + * 8-byte SCR read sometimes never raised DATA_TRAN_DONE although the DMA
 + * had moved all of it, and the setup started over after each 5 s timeout.
++ * And so do segments that end inside a block: an SDIO write that brcmfmac
++ * glued together from several frames timed out (CMD53, -ETIMEDOUT) and
++ * left the bus dead, while the same writes went through PIO.
 + */
 +static bool jz4740_mmc_idma_can(struct jz4740_mmc_host *host,
 +				struct mmc_data *data)
@@ -166,7 +169,7 @@ index 6a3c26b..9645337 100644
 +		return false;
 +
 +	for_each_sg(data->sg, sg, data->sg_len, i)
-+		if ((sg->offset | sg->length) & 3)
++		if ((sg->offset | sg->length) & 3 || sg->length % data->blksz)
 +			return false;
 +
 +	return true;
@@ -246,7 +249,7 @@ index 6a3c26b..9645337 100644
  		return;
  
  	data->host_cookie = COOKIE_UNMAPPED;
-@@ -395,7 +519,7 @@ static void jz4740_mmc_post_request(struct mmc_host *mmc,
+@@ -395,7 +522,7 @@ static void jz4740_mmc_post_request(struct mmc_host *mmc,
  	if (data && data->host_cookie != COOKIE_UNMAPPED)
  		jz4740_mmc_dma_unmap(host, data);
  
@@ -255,7 +258,7 @@ index 6a3c26b..9645337 100644
  		struct dma_chan *chan = jz4740_mmc_get_dma_chan(host, data);
  
  		dmaengine_terminate_all(chan);
-@@ -462,6 +586,11 @@ static void jz4740_mmc_request_done(struct jz4740_mmc_host *host)
+@@ -462,6 +589,11 @@ static void jz4740_mmc_request_done(struct jz4740_mmc_host *host)
  	data = req->data;
  	host->req = NULL;
  
@@ -267,7 +270,7 @@ index 6a3c26b..9645337 100644
  	if (data && data->host_cookie == COOKIE_MAPPED)
  		jz4740_mmc_dma_unmap(host, data);
  	mmc_request_done(host->mmc, req);
-@@ -680,6 +809,7 @@ static void jz4740_mmc_send_command(struct jz4740_mmc_host *host,
+@@ -680,6 +812,7 @@ static void jz4740_mmc_send_command(struct jz4740_mmc_host *host,
  	struct mmc_command *cmd)
  {
  	uint32_t cmdat = host->cmdat;
@@ -275,7 +278,7 @@ index 6a3c26b..9645337 100644
  
  	host->cmdat &= ~JZ_MMC_CMDAT_INIT;
  	jz4740_mmc_clock_disable(host);
-@@ -726,6 +856,11 @@ static void jz4740_mmc_send_command(struct jz4740_mmc_host *host,
+@@ -726,6 +859,11 @@ static void jz4740_mmc_send_command(struct jz4740_mmc_host *host,
  			}
  		} else if (host->version >= JZ_MMC_JZ4780) {
  			writel(0, host->base + JZ_REG_MMC_DMAC);
@@ -287,7 +290,7 @@ index 6a3c26b..9645337 100644
  		}
  
  		writew(cmd->data->blksz, host->base + JZ_REG_MMC_BLKLEN);
-@@ -737,6 +872,10 @@ static void jz4740_mmc_send_command(struct jz4740_mmc_host *host,
+@@ -737,6 +875,10 @@ static void jz4740_mmc_send_command(struct jz4740_mmc_host *host,
  	writel(cmdat, host->base + JZ_REG_MMC_CMDAT);
  
  	jz4740_mmc_clock_enable(host, 1);
@@ -298,7 +301,7 @@ index 6a3c26b..9645337 100644
  }
  
  static void jz_mmc_prepare_data_transfer(struct jz4740_mmc_host *host)
-@@ -786,6 +925,9 @@ static irqreturn_t jz_mmc_irq_worker(int irq, void *devid)
+@@ -786,6 +928,9 @@ static irqreturn_t jz_mmc_irq_worker(int irq, void *devid)
  			 */
  			timeout = jz4740_mmc_start_dma_transfer(host, data);
  			data->bytes_xfered = data->blocks * data->blksz;
@@ -308,7 +311,7 @@ index 6a3c26b..9645337 100644
  		} else if (data->flags & MMC_DATA_READ)
  			/* Use PIO if DMA is not enabled.
  			 * Data transfer direction was defined before
-@@ -812,6 +954,9 @@ static irqreturn_t jz_mmc_irq_worker(int irq, void *devid)
+@@ -812,6 +957,9 @@ static irqreturn_t jz_mmc_irq_worker(int irq, void *devid)
  		fallthrough;
  
  	case JZ4740_MMC_STATE_SEND_STOP:
@@ -318,7 +321,7 @@ index 6a3c26b..9645337 100644
  		if (!req->stop)
  			break;
  
-@@ -850,7 +995,8 @@ static irqreturn_t jz_mmc_irq(int irq, void *devid)
+@@ -850,7 +998,8 @@ static irqreturn_t jz_mmc_irq(int irq, void *devid)
  	irq_reg &= ~host->irq_mask;
  
  	tmp &= ~(JZ_MMC_IRQ_TXFIFO_WR_REQ | JZ_MMC_IRQ_RXFIFO_RD_REQ |
@@ -328,7 +331,7 @@ index 6a3c26b..9645337 100644
  
  	if (tmp != irq_reg)
  		jz4740_mmc_write_irq_reg(host, tmp & ~irq_reg);
-@@ -1123,6 +1269,15 @@ static int jz4740_mmc_probe(struct platform_device* pdev)
+@@ -1123,6 +1272,15 @@ static int jz4740_mmc_probe(struct platform_device* pdev)
  		goto err_free_irq;
  	host->use_dma = !ret;
  
@@ -344,7 +347,7 @@ index 6a3c26b..9645337 100644
  	platform_set_drvdata(pdev, host);
  	ret = mmc_add_host(mmc);
  
-@@ -1133,7 +1288,7 @@ static int jz4740_mmc_probe(struct platform_device* pdev)
+@@ -1133,7 +1291,7 @@ static int jz4740_mmc_probe(struct platform_device* pdev)
  	dev_info(&pdev->dev, "Ingenic SD/MMC card driver registered\n");
  
  	dev_info(&pdev->dev, "Using %s, %d-bit mode\n",
