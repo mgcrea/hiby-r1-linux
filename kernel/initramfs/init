@@ -112,17 +112,22 @@ done
 		cp $log $ML/logs/boot.0
 		sync; mount -o remount,ro /mnt/sd_0; } ) &
 
-# It runs from a copy in RAM, which each restart takes again from the card
-# (killing it picks up a new build), unless the card is with the computer.
-player=$ML/r1player
+# The app is /.r1-mainline/app, else /.r1-mainline/r1player, its earlier
+# name. It runs from a copy in RAM under the same name (/tmp/app or
+# /tmp/r1player, which is what to kill), which each restart takes again
+# from the card (killing it picks up a new build), unless the card is with
+# the computer. Without either, the clock below runs instead.
+player=$ML/app
+[ -x $player ] || player=$ML/r1player
+name=${player##*/}
 if [ -x $player ]; then
 	for vt in /sys/class/vtconsole/vtcon*; do
 		grep -q "frame buffer" $vt/name && echo 0 > $vt/bind
 	done
 	( while :; do
-		cp $player /tmp/r1player.new 2>/dev/null && mv /tmp/r1player.new /tmp/r1player
-		/tmp/r1player >> /tmp/r1player.log 2>&1
-		echo "r1player exited with $?" >> /tmp/r1player.log
+		cp $player /tmp/$name.new 2>/dev/null && mv /tmp/$name.new /tmp/$name
+		/tmp/$name >> /tmp/$name.log 2>&1
+		echo "$name exited with $?" >> /tmp/$name.log
 		sleep 2
 	done ) &
 	wait
