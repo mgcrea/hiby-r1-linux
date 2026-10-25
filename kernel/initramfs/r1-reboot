@@ -2,4 +2,8 @@
 # Reset the R1 back into the stock firmware, through the watchdog driver's
 # restart handler (docs/kernel.md, "Watchdog").
 sync
+# A driver whose shutdown hangs stops the restart (brcmfmac on a broken SDIO
+# bus did, 2026-10-25): then the watchdog resets the R1, which a restart
+# leaves running, once init's daemon stops feeding it.
+( sleep 15; killall watchdog ) &
 exec reboot -f
