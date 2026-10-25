@@ -35,14 +35,17 @@ fi
 # The kernel in flash hands over to the card's kernel here, if there is one
 # (r1-loader); it returns when this kernel carries on.
 /sbin/r1-loader
-# The libraries, adbd, BlueZ and the font come from the stock root
-# filesystem in flash (`rootfs`, an LZO squashfs) so that nothing runs from
+# The libraries, adbd, BlueZ and the font come from the system image in
+# flash (`rootfs`, an LZO squashfs: tools/mksystem.py, or stock's root
+# filesystem, which has them at the same paths) so that nothing runs from
 # the card, which can then go to a computer as a USB disk (r1-share). If
-# that doesn't mount, from the card, where tools/sdsync.sh copied them.
+# that doesn't mount, or `no-rom` on the card says not to (while
+# tools/system-install.sh rewrites the slot), from the card, where
+# tools/sdsync.sh copied them.
 ML=/mnt/sd_0/.r1-mainline
 mtd=$(grep '"rootfs"$' /proc/mtd | cut -d: -f1)
 mkdir -p /rom /tmp/firmware/brcm
-if [ -n "$mtd" ] && mount -t squashfs -o ro /dev/mtdblock${mtd#mtd} /rom; then
+if [ -n "$mtd" ] && [ ! -e $ML/no-rom ] && mount -t squashfs -o ro /dev/mtdblock${mtd#mtd} /rom; then
 	echo "system: /rom ($mtd)"
 	ln -s /rom/lib /lib
 	ln -s /rom/usr/lib /usr/lib
@@ -54,10 +57,11 @@ else
 	ln -s $ML/default.otf /usr/resource/fonts/default.otf
 	export PATH=$PATH:$ML:$ML/bt
 fi
-# The Bluetooth firmware sdsync.sh picked for this module, in RAM: the chip
-# may load it again while the card is away. r1-bt binds hci_bcm again so
-# that it does, from here.
-cp $ML/lib/firmware/brcm/BCM43430A1.hcd /tmp/firmware/brcm/ 2>/dev/null
+# The Bluetooth firmware for this module (the card's copy, which sdsync.sh
+# picked, else the system image's), in RAM: the chip may load it again while
+# the card is away. r1-bt binds hci_bcm again so that it does, from here.
+cp $ML/lib/firmware/brcm/BCM43430A1.hcd /tmp/firmware/brcm/ 2>/dev/null ||
+	cp /rom/lib/firmware/brcm/BCM43430A1.hcd /tmp/firmware/brcm/ 2>/dev/null
 echo -n /tmp/firmware > /sys/module/firmware_class/parameters/path
 # What has to outlive a restart lives on the card, in $R1_STATE: r1player
 # copies its settings and scores there, and bluetoothd's pairings, in a
