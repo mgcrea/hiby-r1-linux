@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Build the R1's system image for the `rootfs` flash slot: the stock
 programs mainline runs (adbd, dbus, BlueZ, bluez-alsa, wpa_supplicant), the
-libraries they and r1player need, the font and the AP6212's firmware
+libraries they and the app need, the font and the AP6212's firmware
 (Bluetooth and Wi-Fi), taken from the unpacked stock root filesystem, at the paths init expects under /rom.
 
-    tools/mksystem.py [STOCK_ROOTFS [R1PLAYER [OUT]]]
+    [R1_APP=APP] tools/mksystem.py [STOCK_ROOTFS [APP [OUT]]]
 
-Defaults: ../firmware/stock/rootfs, the release r1player build (only read
-for its libraries: r1player itself stays on the card) and out/system.squashfs.
+Defaults: ../firmware/stock/rootfs, $R1_APP (the build of the app init
+starts from the card, only read for its libraries: the app itself stays on
+the card; without one the image has only the stock programs' libraries) and
+out/system.squashfs.
 The image holds HiBy's files, so it stays in out/, untracked.
 """
 import os
@@ -105,11 +107,14 @@ def copy(root, rel, dest):
 
 def main():
     root = sys.argv[1] if len(sys.argv) > 1 else os.path.join(REPO, "firmware/stock/rootfs")
-    player = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
-        REPO, "player/target/mipsel-unknown-linux-gnu/release/r1player")
+    player = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("R1_APP")
     out = sys.argv[3] if len(sys.argv) > 3 else os.path.join(HERE, "../out/system.squashfs")
+    if player and not os.path.isfile(player):
+        sys.exit(f"{player}: no such app build")
+    if not player:
+        print("no app given (R1_APP): the image only has what the stock programs need")
 
-    todo = [os.path.join(root, p) for p in PROGRAMS] + [player]
+    todo = [os.path.join(root, p) for p in PROGRAMS] + ([player] if player else [])
     files, seen = set(PROGRAMS + EXTRA), set()
     while todo:
         for name in needed(todo.pop()):
