@@ -1,0 +1,61 @@
+From c7e68bdd57e325c51b731e3f7e62b82b9f564d55 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 20:38:50 +0000
+Subject: [PATCH 43/57] serial: 8250_ingenic: set UMR and UACR at probe
+
+Ingenic UARTs have two registers beyond the 16550's: UMR, the number of
+clocks a bit takes, and UACR, which adds one clock to chosen bits of a
+frame, for fractional baud rates. The JZ4725, JZ4740, JZ4755, JZ4760,
+X1000, X1830, X2000 and X1600 programming manuals all have them at 0x24
+and 0x28. The divisor the 8250 core computes assumes 16 clocks a bit and
+none added.
+
+The driver never writes them, so a UART keeps whatever was there before.
+On a HiBy R1 (X1600) the vendor boot loader sets UMR to 8 on its console
+UART, and the vendor kernel had left 8 on UART0, which carries the
+Bluetooth chip: every rate came out doubled, and the chip never answered
+("command 0xfc18 tx timeout" from hci_bcm). Their reset value, 0, which
+the X1000 and X1600 manuals call normal mode, does not work on the X1600
+either: with UMR at 0 the same command times out.
+
+Set UMR to 16 and UACR to 0 at probe.
+
+Tested on a HiBy R1: with UMR at 0 or 8 the BCM43430A1 on UART0 fails to
+set up; with this patch it comes up at 1.5 Mbaud and streams A2DP audio.
+---
+ drivers/tty/serial/8250/8250_ingenic.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/drivers/tty/serial/8250/8250_ingenic.c b/drivers/tty/serial/8250/8250_ingenic.c
+index 94542fc..ede2094 100644
+--- a/drivers/tty/serial/8250/8250_ingenic.c
++++ b/drivers/tty/serial/8250/8250_ingenic.c
+@@ -39,6 +39,10 @@ static const struct of_device_id of_match[];
+ #define UART_MCR_MDCE	BIT(7)
+ #define UART_MCR_FCM	BIT(6)
+ 
++/* Clocks a bit, and an extra clock for chosen bits */
++#define UART_UMR	9
++#define UART_UACR	10
++
+ static struct earlycon_device *early_device;
+ 
+ static uint8_t early_in(struct uart_port *port, int offset)
+@@ -297,6 +301,14 @@ static int ingenic_uart_probe(struct platform_device *pdev)
+ 	}
+ 	uart.port.uartclk = clk_get_rate(data->clk_baud);
+ 
++	/*
++	 * The 8250 core's divisor assumes 16 clocks a bit. Whatever ran before
++	 * may have left another count, and on the X1600 even the reset value,
++	 * 0, does not give 16.
++	 */
++	writel(16, uart.port.membase + (UART_UMR << uart.port.regshift));
++	writel(0, uart.port.membase + (UART_UACR << uart.port.regshift));
++
+ 	data->line = serial8250_register_8250_port(&uart);
+ 	if (data->line < 0) {
+ 		err = data->line;
+-- 
+2.39.5
+

@@ -1,7 +1,7 @@
-From f6f6e4a936e1c48e8b1fbe94f5c60d9d59e0db8a Mon Sep 17 00:00:00 2001
+From 5db2490fe1d4f34f35e9060f9acec45d3dbd31dd Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:39:55 +0000
-Subject: [PATCH 16/55] MIPS: ingenic: add the X1600 ADC and the HiBy R1's keys
+Subject: [PATCH 16/57] MIPS: ingenic: add the X1600 ADC and the HiBy R1's keys
 
 X1600: the SAR ADC at 0x10070000, interrupt 11.
 
@@ -78,7 +78,7 @@ index bcdf364..69b6699 100644
  	vdac: regulator-dac {
  		compatible = "regulator-fixed";
 diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
-index 45c78bc..a7cf29d 100644
+index fe76df7..81ab235 100644
 --- a/arch/mips/boot/dts/ingenic/x1600.dtsi
 +++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
 @@ -181,6 +181,19 @@ i2s: i2s@10079000 {

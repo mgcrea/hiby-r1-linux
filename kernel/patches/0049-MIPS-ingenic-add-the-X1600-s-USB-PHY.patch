@@ -1,7 +1,7 @@
-From adc8db3ccd6f9b03709570a269729c3ec2b795bc Mon Sep 17 00:00:00 2001
+From 2875881293979b41ad79de72e862223243cc2abc Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 04:48:08 +0000
-Subject: [PATCH 49/55] MIPS: ingenic: add the X1600's USB PHY
+Subject: [PATCH 49/57] MIPS: ingenic: add the X1600's USB PHY
 
 The PHY as a child of the CGU, for the OTG controller, enabled on the
 HiBy R1.
@@ -26,7 +26,7 @@ index d1426b5..7af7c83 100644
  	status = "okay";
  
 diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
-index a0ccc45..2930d28 100644
+index 10fffcc..9913dd1 100644
 --- a/arch/mips/boot/dts/ingenic/x1600.dtsi
 +++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
 @@ -56,13 +56,27 @@ osc32k: osc32k {

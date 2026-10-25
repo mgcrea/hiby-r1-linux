@@ -1,0 +1,49 @@
+From 3adc890b63352707eb72949cfa6b58a56b1fa1b2 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Sun, 25 Oct 2026 08:16:14 +0000
+Subject: [PATCH 56/57] MIPS: ingenic: HiBy R1: let the kernel and rootfs
+ partitions be written
+
+The flash kernel is updated from mainline now, and the root filesystem
+slot is next. The boot loader, HiBy's recovery system, the OTA flags, the
+stock user data and HiBy's MAC, serial number and licence data stay
+read-only, so the MTD layer refuses to erase or write them.
+---
+ arch/mips/boot/dts/ingenic/hiby-r1.dts | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/arch/mips/boot/dts/ingenic/hiby-r1.dts b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+index b87a422..2f29476 100644
+--- a/arch/mips/boot/dts/ingenic/hiby-r1.dts
++++ b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+@@ -483,7 +483,12 @@ partitions {
+ 			#address-cells = <1>;
+ 			#size-cells = <1>;
+ 
+-			/* Read-only until writing is trusted. */
++			/*
++			 * Only the flash kernel's slot and the root filesystem's
++			 * can be written: the boot loader, HiBy's recovery, the
++			 * OTA flags, the stock user data and HiBy's own data
++			 * stay read-only.
++			 */
+ 			partition@0 {
+ 				label = "uboot";
+ 				reg = <0x0 0x80000>;
+@@ -493,13 +498,11 @@ partition@0 {
+ 			partition@80000 {
+ 				label = "kernel";
+ 				reg = <0x80000 0x500000>;
+-				read-only;
+ 			};
+ 
+ 			partition@580000 {
+ 				label = "rootfs";
+ 				reg = <0x580000 0x2d00000>;
+-				read-only;
+ 			};
+ 
+ 			/* HiBy's recovery system. */
+-- 
+2.39.5
+

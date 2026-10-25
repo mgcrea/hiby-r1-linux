@@ -1,7 +1,7 @@
-From 602da5c0a6a0b6726a0fe9eddf08f1981d300958 Mon Sep 17 00:00:00 2001
+From 213c19ccf746b62a295d5e1b300188983ff2d1f4 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:00:55 +0000
-Subject: [PATCH 32/55] MIPS: ingenic: add the X1600 LCD and PWM controllers
+Subject: [PATCH 32/57] MIPS: ingenic: add the X1600 LCD and PWM controllers
  and the HiBy R1's display
 
 Describe the X1600's LCD and PWM controllers, and drive the HiBy R1's screen
@@ -154,7 +154,7 @@ index 765007d..c63101c 100644
  		function = "mmc1";
  		groups = "mmc1-1bit", "mmc1-4bit";
 diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
-index a7cf29d..712cc23 100644
+index 81ab235..4fb0df1 100644
 --- a/arch/mips/boot/dts/ingenic/x1600.dtsi
 +++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
 @@ -208,6 +208,19 @@ ost: timer@12000000 {

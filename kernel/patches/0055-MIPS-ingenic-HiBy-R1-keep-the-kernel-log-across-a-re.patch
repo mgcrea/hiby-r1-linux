@@ -1,0 +1,39 @@
+From 18296d91e8edaed893d84ea8732a5c4eaf7f45b0 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Sun, 25 Oct 2026 07:34:24 +0000
+Subject: [PATCH 55/57] MIPS: ingenic: HiBy R1: keep the kernel log across a
+ reset
+
+Reserve the top 64 KiB of RAM for ramoops: the console log and any oops
+survive the watchdog reset that a panic or a hang ends in, and the next
+boot shows them in /sys/fs/pstore.
+---
+ arch/mips/boot/dts/ingenic/hiby-r1.dts | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/arch/mips/boot/dts/ingenic/hiby-r1.dts b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+index f94ad91..b87a422 100644
+--- a/arch/mips/boot/dts/ingenic/hiby-r1.dts
++++ b/arch/mips/boot/dts/ingenic/hiby-r1.dts
+@@ -40,6 +40,18 @@ lcd_pages: framebuffer@2600000 {
+ 			reg = <0x02600000 0x177000>;
+ 			no-map;
+ 		};
++
++		/*
++		 * The last kernel log and any oops, kept across a watchdog
++		 * reset (RAM keeps its contents) for the next boot to read in
++		 * /sys/fs/pstore.
++		 */
++		ramoops@3ff0000 {
++			compatible = "ramoops";
++			reg = <0x03ff0000 0x10000>;
++			record-size = <0x4000>;
++			console-size = <0x8000>;
++		};
+ 	};
+ 
+ 	framebuffer@2600000 {
+-- 
+2.39.5
+

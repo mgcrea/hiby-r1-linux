@@ -1,7 +1,7 @@
-From b093bc5c5b1285f73185eff79a1385f74720978c Mon Sep 17 00:00:00 2001
+From ff1a941913324b7f4af52b4fb06fdcd1cc95718a Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 07:30:24 +0000
-Subject: [PATCH 53/55] MIPS: ingenic: add the X1600 SFC and the HiBy R1's
+Subject: [PATCH 53/57] MIPS: ingenic: add the X1600 SFC and the HiBy R1's
  SPI-NAND
 
 The R1's 128 MiB SPI-NAND with stock's partitions, all read-only for now,
@@ -102,7 +102,7 @@ index 7af7c83..f94ad91 100644
  	status = "okay";
  };
 diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
-index 2930d28..bfcab4e 100644
+index 9913dd1..c051a5b 100644
 --- a/arch/mips/boot/dts/ingenic/x1600.dtsi
 +++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
 @@ -328,6 +328,21 @@ pdma: dma-controller@13420000 {

@@ -1,7 +1,7 @@
-From 114c8669bb0332a10efb3804b76dcc42068312b9 Mon Sep 17 00:00:00 2001
+From aebad1ba64dfc5e7b1ff979caebc2e45fbd67e06 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 04:48:08 +0000
-Subject: [PATCH 47/55] dt-bindings: phy: ingenic: add the X1600
+Subject: [PATCH 47/57] dt-bindings: phy: ingenic: add the X1600
 
 The X1600's USB PHY control registers sit in its CGU at 0x3c, as on the
 X1830.

@@ -1,7 +1,7 @@
-From 135eef48e63616c372b28776fa85b65276be95ad Mon Sep 17 00:00:00 2001
+From a6d46e3f08f83a579ac1b85b7804ae720dbfcc30 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 12:24:45 +0000
-Subject: [PATCH 38/55] dt-bindings: timer: ingenic,tcu: add the X1600
+Subject: [PATCH 38/57] dt-bindings: timer: ingenic,tcu: add the X1600
 
 The X1600 TCU is the X1000's, but its watchdog is zeroed through TCSR rather
 than TCNT, so it gets a compatible of its own.

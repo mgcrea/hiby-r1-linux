@@ -1,41 +1,48 @@
-From cd0f4b8edab8b375d135e0c492263935c145e68e Mon Sep 17 00:00:00 2001
+From a006da69620c9e8580be936f114a541addc00fa5 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:20:53 +0000
-Subject: [PATCH 10/55] ASoC: jz4740-i2s: add the X1600
+Subject: [PATCH 10/57] ASoC: jz4740-i2s: add the X1600
 
-The X1600's AIC is the X1000's, but its I2SDIV holds the bit clock
-divider itself, not the divider minus one, and drops the lowest bit of
-what is written. With the X1000's settings, 44.1 kHz from a 22.5792 MHz
-MCLK writes 7, the register keeps 6 and the stream plays at 58.8 kHz
-(measured on a HiBy R1).
+The X1600's AIC is the X1000's, with two differences.
 
-Its AICCR also has a channel count in bits 27:24 that the driver never
-wrote. It held 1 (two channels) in every stream, left over from the
-earlier kernel, and with it a mono stream is taken two samples per frame,
-as left and right: it plays an octave high and ends in half the time even
-with MONO_TO_STEREO set. Write the number of channels minus one and mono
-plays at the right speed (a 6 s mono stream took 3 s before; 8 s took 7 s
-once the field was cleared after one second).
+Its I2SDIV register holds the bit clock divider itself, not the divider
+minus one, and keeps only even values ("The ODD-number value will be
+floor to EVEN-number value", X1600 programming manual, 9.7.2.6). The
+driver writes div - 1 and, from a 22.5792 MHz clock, asks for 44.1 kHz
+with 7: the register keeps 6, and the stream plays at 58.8 kHz (measured
+on a HiBy R1 from the PCM hardware pointer: 44,100 expected, 58,700
+observed).
+
+It has no MONO_TO_STEREO: AICCR bit 11 is reserved. What makes a stream
+mono is the channel count in AICCR bits 26:24 (0 for mono, 1 for
+stereo), which the driver never writes. Left at 1, the AIC takes a mono
+stream two samples per frame, as left and right, so it plays an octave
+high and ends in half the time. The X1000 manual has the same field next
+to its MONO_TO_STEREO bit; the X1000 is left as it is.
 
 Add an X1600 entry that picks even dividers, writes them as they are and
-sets the channel field.
+sets the channel field instead of MONO_TO_STEREO.
+
+Tested on a HiBy R1 (Ingenic X1600) with a CS43131 DAC, on v7.3: 44.1
+and 48 kHz run at the right rate, and a 6 s mono stream takes 6 s and is
+heard on both channels, the same with bit 11 set or clear.
 ---
- sound/soc/jz4740/jz4740-i2s.c | 44 +++++++++++++++++++++++++++++------
- 1 file changed, 37 insertions(+), 7 deletions(-)
+ sound/soc/jz4740/jz4740-i2s.c | 48 ++++++++++++++++++++++++++++-------
+ 1 file changed, 39 insertions(+), 9 deletions(-)
 
 diff --git a/sound/soc/jz4740/jz4740-i2s.c b/sound/soc/jz4740/jz4740-i2s.c
-index d36bbc8..5153fed 100644
+index d36bbc8..863e5c2 100644
 --- a/sound/soc/jz4740/jz4740-i2s.c
 +++ b/sound/soc/jz4740/jz4740-i2s.c
 @@ -38,6 +38,7 @@
  #define JZ_AIC_CONF_SYNC_CLK_MASTER	BIT(1)
  #define JZ_AIC_CONF_ENABLE		BIT(0)
  
-+#define JZ_AIC_CTRL_CHANNEL		GENMASK(27, 24)
++#define JZ_AIC_CTRL_CHANNEL		GENMASK(26, 24)
  #define JZ_AIC_CTRL_OUTPUT_SAMPLE_SIZE	GENMASK(21, 19)
  #define JZ_AIC_CTRL_INPUT_SAMPLE_SIZE	GENMASK(18, 16)
  #define JZ_AIC_CTRL_ENABLE_RX_DMA	BIT(15)
-@@ -71,6 +72,16 @@ struct i2s_soc_info {
+@@ -71,6 +72,17 @@ struct i2s_soc_info {
  	struct reg_field field_i2sdiv_playback;
  
  	bool shared_fifo_flush;
@@ -45,14 +52,15 @@ index d36bbc8..5153fed 100644
 +	 */
 +	bool i2sdiv_even;
 +	/*
-+	 * AICCR has the number of channels, minus one, in bits 27:24, which
-+	 * the AIC uses to size a frame in the FIFO (X1600).
++	 * AICCR has the number of channels, minus one, in bits 26:24, which
++	 * the AIC uses to size a frame in the FIFO, and no MONO_TO_STEREO
++	 * (bit 11 is reserved) (X1600).
 +	 */
 +	bool channel_field;
  };
  
  struct jz4740_i2s {
-@@ -218,16 +229,17 @@ static int jz4740_i2s_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
+@@ -218,16 +230,17 @@ static int jz4740_i2s_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
  }
  
  static int jz4740_i2s_get_i2sdiv(unsigned long mclk, unsigned long rate,
@@ -73,7 +81,7 @@ index d36bbc8..5153fed 100644
  
  	err1 = abs(rate1 - rate);
  	err2 = abs(rate2 - rate);
-@@ -241,8 +253,8 @@ static int jz4740_i2s_get_i2sdiv(unsigned long mclk, unsigned long rate,
+@@ -241,8 +254,8 @@ static int jz4740_i2s_get_i2sdiv(unsigned long mclk, unsigned long rate,
  	 */
  	if (div <= i2sdiv_max && err1 <= err2 && err1 < rate/20)
  		return div;
@@ -84,19 +92,24 @@ index d36bbc8..5153fed 100644
  
  	return -EINVAL;
  }
-@@ -281,6 +293,12 @@ static int jz4740_i2s_hw_params(struct snd_pcm_substream *substream,
+@@ -281,10 +294,15 @@ static int jz4740_i2s_hw_params(struct snd_pcm_substream *substream,
  		ctrl &= ~JZ_AIC_CTRL_OUTPUT_SAMPLE_SIZE;
  		ctrl |= FIELD_PREP(JZ_AIC_CTRL_OUTPUT_SAMPLE_SIZE, sample_size);
  
+-		if (params_channels(params) == 1)
 +		if (i2s->soc_info->channel_field) {
-+			ctrl &= ~JZ_AIC_CTRL_CHANNEL;
++			ctrl &= ~(JZ_AIC_CTRL_CHANNEL | JZ_AIC_CTRL_MONO_TO_STEREO);
 +			ctrl |= FIELD_PREP(JZ_AIC_CTRL_CHANNEL,
 +					   params_channels(params) - 1);
-+		}
-+
- 		if (params_channels(params) == 1)
++		} else if (params_channels(params) == 1) {
  			ctrl |= JZ_AIC_CTRL_MONO_TO_STEREO;
- 		else
+-		else
++		} else {
+ 			ctrl &= ~JZ_AIC_CTRL_MONO_TO_STEREO;
++		}
+ 
+ 		div_field = i2s->field_i2sdiv_playback;
+ 		i2sdiv_max = GENMASK(i2s->soc_info->field_i2sdiv_playback.msb,
 @@ -305,13 +323,14 @@ static int jz4740_i2s_hw_params(struct snd_pcm_substream *substream,
  	 */
  	if (conf & (JZ_AIC_CONF_BIT_CLK_MASTER | JZ_AIC_CONF_SYNC_CLK_MASTER)) {

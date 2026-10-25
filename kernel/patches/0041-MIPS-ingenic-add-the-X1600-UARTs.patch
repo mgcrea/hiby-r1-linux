@@ -1,7 +1,7 @@
-From 9c6b7f4775ddca9c786ab1b10a81eed440cfe1b1 Mon Sep 17 00:00:00 2001
+From 6a01ad315d9181619d70892ef330ce47214a92b7 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 20:33:27 +0000
-Subject: [PATCH 41/55] MIPS: ingenic: add the X1600 UARTs
+Subject: [PATCH 41/57] MIPS: ingenic: add the X1600 UARTs
 
 Four UARTs at 0x10030000-0x10033000, interrupts 47 to 44, as in the HiBy R1's
 stock device tree, each with its CGU gate and the 24 MHz crystal as the baud
@@ -11,7 +11,7 @@ clock.
  1 file changed, 52 insertions(+)
 
 diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
-index 74c163c..a0ccc45 100644
+index be939ba..10fffcc 100644
 --- a/arch/mips/boot/dts/ingenic/x1600.dtsi
 +++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
 @@ -132,6 +132,58 @@ gpd: gpio@3 {
@@ -71,7 +71,7 @@ index 74c163c..a0ccc45 100644
 +	};
 +
  	i2c0: i2c@10050000 {
- 		compatible = "ingenic,x1600-i2c";
+ 		compatible = "ingenic,x1600-i2c", "ingenic,x1000-i2c";
  		reg = <0x10050000 0x1000>;
 -- 
 2.39.5

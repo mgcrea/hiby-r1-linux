@@ -1,19 +1,22 @@
-From fa76e0c16301b4c72589d3cd1d8061417c198d66 Mon Sep 17 00:00:00 2001
+From 0f6290f29348f3a9114c683cc66f737378b0b0e5 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:09:57 +0000
-Subject: [PATCH 30/55] dt-bindings: pwm: add the Ingenic X1600 PWM controller
+Subject: [PATCH 30/57] dt-bindings: pwm: add the Ingenic X1600 PWM controller
 
+The X1600 has an eight-channel PWM controller of its own, separate from
+the TCU timers that drive the PWMs of earlier Ingenic SoCs
+(ingenic,tcu.yaml), so it gets a binding of its own.
 ---
- .../bindings/pwm/ingenic,x1600-pwm.yaml       | 49 +++++++++++++++++++
- 1 file changed, 49 insertions(+)
+ .../bindings/pwm/ingenic,x1600-pwm.yaml       | 47 +++++++++++++++++++
+ 1 file changed, 47 insertions(+)
  create mode 100644 Documentation/devicetree/bindings/pwm/ingenic,x1600-pwm.yaml
 
 diff --git a/Documentation/devicetree/bindings/pwm/ingenic,x1600-pwm.yaml b/Documentation/devicetree/bindings/pwm/ingenic,x1600-pwm.yaml
 new file mode 100644
-index 0000000..b926110
+index 0000000..3ecaa92
 --- /dev/null
 +++ b/Documentation/devicetree/bindings/pwm/ingenic,x1600-pwm.yaml
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,47 @@
 +# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 +%YAML 1.2
 +---
@@ -55,12 +58,10 @@ index 0000000..b926110
 +
 +examples:
 +  - |
-+    #include <dt-bindings/clock/ingenic,x1600-cgu.h>
-+
 +    pwm@134c0000 {
 +        compatible = "ingenic,x1600-pwm";
 +        reg = <0x134c0000 0x200>;
-+        clocks = <&cgu X1600_CLK_PWM>;
++        clocks = <&cgu 21>;
 +        #pwm-cells = <3>;
 +    };
 -- 

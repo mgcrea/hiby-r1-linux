@@ -1,23 +1,25 @@
-From 006291f358987029b5b9ca0875ac784fce820c8b Mon Sep 17 00:00:00 2001
+From e7b5cb85de7711c9d1b141856cd9056359f865b5 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 08:59:28 +0000
-Subject: [PATCH 25/55] dt-bindings: display: add the Ingenic X1600 LCD
+Subject: [PATCH 25/57] dt-bindings: display: add the Ingenic X1600 LCD
  controller
 
-The X1600 LCD controller fetches frames through descriptors and keeps its
-interface and timings in register blocks of its own, so it shares nothing
-with the controllers ingenic,lcd.yaml describes.
+The X1600's display controller fetches frames through descriptors and
+keeps its interface and timings in register blocks of their own (X1600
+programming manual, chapter 10), so it shares nothing with the
+controllers ingenic,lcd.yaml describes. Its registers are those of the
+X2000's display controller without the composer.
 ---
- .../bindings/display/ingenic,x1600-lcd.yaml   | 72 +++++++++++++++++++
- 1 file changed, 72 insertions(+)
+ .../bindings/display/ingenic,x1600-lcd.yaml   | 70 +++++++++++++++++++
+ 1 file changed, 70 insertions(+)
  create mode 100644 Documentation/devicetree/bindings/display/ingenic,x1600-lcd.yaml
 
 diff --git a/Documentation/devicetree/bindings/display/ingenic,x1600-lcd.yaml b/Documentation/devicetree/bindings/display/ingenic,x1600-lcd.yaml
 new file mode 100644
-index 0000000..1f8cdaa
+index 0000000..171536c
 --- /dev/null
 +++ b/Documentation/devicetree/bindings/display/ingenic,x1600-lcd.yaml
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,70 @@
 +# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 +%YAML 1.2
 +---
@@ -30,7 +32,7 @@ index 0000000..1f8cdaa
 +  - Olivier Louvignes <olivier@mgcrea.io>
 +
 +description:
-+  The LCD controller of the Ingenic X1600 SoC. It fetches frames through
++  The display controller of the Ingenic X1600 SoC. It fetches frames through
 +  descriptors in memory and drives a parallel RGB panel or a smart panel;
 +  its registers have nothing in common with the controllers described in
 +  ingenic,lcd.yaml.
@@ -50,7 +52,7 @@ index 0000000..1f8cdaa
 +
 +  clocks:
 +    items:
-+      - description: Pixel clock
++      - description: The pixel clock, whose gate also gates the controller
 +
 +  clock-names:
 +    items:
@@ -72,8 +74,6 @@ index 0000000..1f8cdaa
 +
 +examples:
 +  - |
-+    #include <dt-bindings/clock/ingenic,x1600-cgu.h>
-+
 +    lcd-controller@13050000 {
 +        compatible = "ingenic,x1600-lcd";
 +        reg = <0x13050000 0x10000>;
@@ -81,7 +81,7 @@ index 0000000..1f8cdaa
 +        interrupt-parent = <&intc>;
 +        interrupts = <31>;
 +
-+        clocks = <&cgu X1600_CLK_LCD>;
++        clocks = <&cgu 16>;
 +        clock-names = "lcd";
 +
 +        port {

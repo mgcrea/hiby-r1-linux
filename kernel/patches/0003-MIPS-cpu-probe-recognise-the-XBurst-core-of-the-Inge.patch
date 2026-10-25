@@ -1,0 +1,48 @@
+From ae386573ca18304d077532340d755655092deedf Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 05:30:36 +0000
+Subject: [PATCH 03/57] MIPS: cpu-probe: recognise the XBurst core of the
+ Ingenic X1600
+
+The X1600 reports PRId 0x00d00000: company Ingenic D0, implementation 0,
+which cpu_probe_ingenic() rejects with "Unknown Ingenic Processor ID!"
+before any console exists.
+
+Add implementation 0 as PRID_IMP_XBURST and handle it as
+PRID_IMP_XBURST_REV2, as for the X1830, which also reports company D0:
+write-combine through the WA bit, and none of the REV1 workarounds.
+
+Co-developed-by: H. Nikolaus Schaller <hns@goldelico.com>
+---
+ arch/mips/include/asm/cpu.h  | 1 +
+ arch/mips/kernel/cpu-probe.c | 2 ++
+ 2 files changed, 3 insertions(+)
+
+diff --git a/arch/mips/include/asm/cpu.h b/arch/mips/include/asm/cpu.h
+index 0fd9f9b..c43c936 100644
+--- a/arch/mips/include/asm/cpu.h
++++ b/arch/mips/include/asm/cpu.h
+@@ -186,6 +186,7 @@
+  * These are the PRID's for when 23:16 == PRID_COMP_INGENIC_*
+  */
+ 
++#define PRID_IMP_XBURST		0x0000	/* XBurst®1 (X1600)			*/
+ #define PRID_IMP_XBURST_REV1	0x0200	/* XBurst®1 with MXU1.0/MXU1.1 SIMD ISA	*/
+ #define PRID_IMP_XBURST_REV2	0x0100	/* XBurst®1 with MXU2.0 SIMD ISA		*/
+ #define PRID_IMP_XBURST2		0x2000	/* XBurst®2 with MXU2.1 SIMD ISA		*/
+diff --git a/arch/mips/kernel/cpu-probe.c b/arch/mips/kernel/cpu-probe.c
+index 489612e..7da5591 100644
+--- a/arch/mips/kernel/cpu-probe.c
++++ b/arch/mips/kernel/cpu-probe.c
+@@ -1814,6 +1814,8 @@ static inline void cpu_probe_ingenic(struct cpuinfo_mips *c, unsigned int cpu)
+ 		}
+ 		fallthrough;
+ 
++	/* XBurst®1 (X1600) */
++	case PRID_IMP_XBURST:
+ 	/* XBurst®1 with MXU2.0 SIMD ISA */
+ 	case PRID_IMP_XBURST_REV2:
+ 		/* Ingenic uses the WA bit to achieve write-combine memory writes */
+-- 
+2.39.5
+

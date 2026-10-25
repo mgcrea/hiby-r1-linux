@@ -1,17 +1,18 @@
-From c88d68fa6126aaf457f7e3c3b9011e8cb42c8b13 Mon Sep 17 00:00:00 2001
+From 9ac7e4a00553a4cd3d6565dc5b143c06e1bbb3a1 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:02:43 +0000
-Subject: [PATCH 09/55] dt-bindings: add X1600 compatibles for the Ingenic DMA,
+Subject: [PATCH 09/57] dt-bindings: add X1600 compatibles for the Ingenic DMA,
  I2C and I2S
 
-The X1600's DMA controller works as the X1830's. Its I2C and I2S
-controllers have their own compatibles: a register offset and a clock
-divider differ from the X1000's.
+The X1600's DMA controller works as the X1830's, and its I2C controller
+has the X1000's registers (it falls back to ingenic,x1000-i2c). Its I2S
+controller has its own compatible: a clock divider differs from the
+X1000's.
 ---
  Documentation/devicetree/bindings/dma/ingenic,dma.yaml   | 3 +++
- Documentation/devicetree/bindings/i2c/ingenic,i2c.yaml   | 1 +
+ Documentation/devicetree/bindings/i2c/ingenic,i2c.yaml   | 3 +++
  Documentation/devicetree/bindings/sound/ingenic,aic.yaml | 1 +
- 3 files changed, 5 insertions(+)
+ 3 files changed, 7 insertions(+)
 
 diff --git a/Documentation/devicetree/bindings/dma/ingenic,dma.yaml b/Documentation/devicetree/bindings/dma/ingenic,dma.yaml
 index d9cca30..4f8284f 100644
@@ -28,17 +29,19 @@ index d9cca30..4f8284f 100644
    reg:
      items:
 diff --git a/Documentation/devicetree/bindings/i2c/ingenic,i2c.yaml b/Documentation/devicetree/bindings/i2c/ingenic,i2c.yaml
-index b61fdc9..43de285 100644
+index b61fdc9..9004f97 100644
 --- a/Documentation/devicetree/bindings/i2c/ingenic,i2c.yaml
 +++ b/Documentation/devicetree/bindings/i2c/ingenic,i2c.yaml
-@@ -21,6 +21,7 @@ properties:
-       - enum:
-           - ingenic,jz4770-i2c
-           - ingenic,x1000-i2c
-+          - ingenic,x1600-i2c
+@@ -24,6 +24,9 @@ properties:
        - items:
            - const: ingenic,jz4780-i2c
            - const: ingenic,jz4770-i2c
++      - items:
++          - const: ingenic,x1600-i2c
++          - const: ingenic,x1000-i2c
+ 
+   reg:
+     maxItems: 1
 diff --git a/Documentation/devicetree/bindings/sound/ingenic,aic.yaml b/Documentation/devicetree/bindings/sound/ingenic,aic.yaml
 index d15c000..9ca75fb 100644
 --- a/Documentation/devicetree/bindings/sound/ingenic,aic.yaml

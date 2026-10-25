@@ -1,24 +1,26 @@
-From 55ace56ee4ab1b245c57f540c846726d869b6b3d Mon Sep 17 00:00:00 2001
+From d383fcd79eb97641de32590fa6a118ff93b94813 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:00:55 +0000
-Subject: [PATCH 26/55] drm/ingenic: add a driver for the X1600 LCD controller
+Subject: [PATCH 26/57] drm/ingenic: add a driver for the X1600 LCD controller
 
-The X1600 LCD controller has none of the registers ingenic-drm programs: it
-fetches each frame through a descriptor whose address it takes from FRM_DESC,
-and keeps its interface, TFT timings and smart panel set-up in separate
-register blocks. This driver handles parallel RGB panels on a 24-bit bus,
-with one full-screen plane in RGB565 or XRGB8888. Each descriptor points at
-itself, so a frame repeats until a flip links the next descriptor in, which
-the controller follows at the end of the frame.
+The X1600's display controller has none of the registers ingenic-drm
+programs: it fetches each frame through a descriptor whose address it
+takes from SRD_CHAIN_ADDR, and keeps its interface, TFT timings and smart
+panel set-up in separate register blocks (X1600 programming manual,
+chapter 10; the X2000's controller without the composer). This driver
+handles parallel RGB panels on a 24-bit bus, with one full-screen RGB565
+plane.
 
-The register layout comes from the vendor kernel's driver, as rewritten under
-the GPL for HiBy's players.
+Each descriptor points at itself, so a frame repeats until a flip hands
+the controller the other one. The controller takes it "at appropriate
+time", so a flip's event waits until the descriptor-site register
+reports the new descriptor at the end of a frame.
 ---
  drivers/gpu/drm/Makefile                    |   1 +
  drivers/gpu/drm/ingenic/Kconfig             |  20 +
  drivers/gpu/drm/ingenic/Makefile            |   1 +
- drivers/gpu/drm/ingenic/ingenic-x1600-drm.c | 624 ++++++++++++++++++++
- 4 files changed, 646 insertions(+)
+ drivers/gpu/drm/ingenic/ingenic-x1600-drm.c | 652 ++++++++++++++++++++
+ 4 files changed, 674 insertions(+)
  create mode 100644 drivers/gpu/drm/ingenic/ingenic-x1600-drm.c
 
 diff --git a/drivers/gpu/drm/Makefile b/drivers/gpu/drm/Makefile
@@ -75,31 +77,33 @@ index f10cc1c..90072ad 100644
 +obj-$(CONFIG_DRM_INGENIC_X1600) += ingenic-x1600-drm.o
 diff --git a/drivers/gpu/drm/ingenic/ingenic-x1600-drm.c b/drivers/gpu/drm/ingenic/ingenic-x1600-drm.c
 new file mode 100644
-index 0000000..0c63b2e
+index 0000000..2df136c
 --- /dev/null
 +++ b/drivers/gpu/drm/ingenic/ingenic-x1600-drm.c
-@@ -0,0 +1,624 @@
+@@ -0,0 +1,652 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * DRM driver for the LCD controller of the Ingenic X1600
 + *
-+ * The X1600's controller shares no registers with the JZ47xx and X1000 ones
-+ * that ingenic-drm drives: it fetches each frame through a descriptor whose
-+ * address is in FRM_DESC, and its interface and timings sit in register
-+ * blocks of their own. It drives parallel RGB (TFT) panels and smart panels;
-+ * this driver handles parallel RGB panels on a 24-bit bus only. The register
-+ * layout comes from the vendor kernel's driver, as rewritten under the GPL
-+ * for HiBy's players, and matches what the vendor kernel leaves programmed.
++ * Copyright (c) 2026 Olivier Louvignes <olivier@mgcrea.io>
++ *
++ * The X1600's display controller (X1600 programming manual, chapter 10) is
++ * the simple read channel of the X2000's, without its composer. It shares no
++ * registers with the JZ47xx and X1000 controllers that ingenic-drm drives: it
++ * fetches each frame through a descriptor whose address is in SRD_CHAIN_ADDR,
++ * and its interface and timings sit in register blocks of their own. It
++ * drives parallel RGB (TFT) panels and smart panels; this driver handles
++ * parallel RGB panels on a 24-bit bus, from RGB565 framebuffers.
 + */
 +
 +#include <linux/aperture.h>
 +#include <linux/bitfield.h>
++#include <linux/bits.h>
 +#include <linux/clk.h>
 +#include <linux/completion.h>
 +#include <linux/dma-mapping.h>
 +#include <linux/interrupt.h>
 +#include <linux/io.h>
-+#include <linux/media-bus-format.h>
 +#include <linux/module.h>
 +#include <linux/of.h>
 +#include <linux/platform_device.h>
@@ -124,78 +128,69 @@ index 0000000..0c63b2e
 +#include <drm/drm_probe_helper.h>
 +#include <drm/drm_vblank.h>
 +
-+#define X1600_LCD_FRM_DESC		0x1000
-+#define X1600_LCD_FRM_START		0x1004
++#define X1600_LCD_SRD_CHAIN_ADDR	0x1000
++#define X1600_LCD_SRD_CHAIN_START	0x1004
 +#define X1600_LCD_CTRL			0x2000
-+#define X1600_LCD_STATE			0x2004	/* undocumented */
++#define X1600_LCD_ST			0x2004
 +#define X1600_LCD_CLR_ST		0x2008
-+#define X1600_LCD_INT_EN		0x200c
-+#define X1600_LCD_ST			0x2010
-+#define X1600_LCD_CFG2			0x2014
-+#define X1600_LCD_COM_CFG		0x8000
++#define X1600_LCD_INTC			0x200c
++#define X1600_LCD_INT_FLAG		0x2010
++#define X1600_LCD_COM_CONFIG		0x2014
++#define X1600_LCD_CHAIN_SITE		0x2204
++#define X1600_LCD_DISP_COM		0x8000
 +#define X1600_LCD_TFT_HSYNC		0x9000
 +#define X1600_LCD_TFT_VSYNC		0x9004
 +#define X1600_LCD_TFT_HDE		0x9008
 +#define X1600_LCD_TFT_VDE		0x900c
-+#define X1600_LCD_TFT_CFG		0x9010
++#define X1600_LCD_TFT_TRAN_CFG		0x9010
 +
-+/* CTRL: stop at the end of the frame. */
-+#define X1600_LCD_CTRL_GEN_STOP		BIT(4)
++/* CTRL: stop the simple read channel at the end of the frame. */
++#define X1600_LCD_CTRL_GEN_STP_SRD	BIT(4)
 +
-+/*
-+ * STATE: 0x0f running, 0x06 or 0x20006 stopped. Bit 8 is set when an underrun
-+ * halted the controller: it then ignores stops and starts until a reset.
-+ */
-+#define X1600_LCD_STATE_STUCK		BIT(8)
++/* ST; CLR_ST (write 1 to clear), INTC and INT_FLAG have the same bits. */
++#define X1600_LCD_ST_WORKING		BIT(0)
++#define X1600_LCD_ST_STOP_SRD_ACK	BIT(7)
++#define X1600_LCD_ST_TFT_UNDR		BIT(8)
++#define X1600_LCD_ST_DISP_END		BIT(17)	/* a frame was displayed */
 +
-+/*
-+ * ST, CLR_ST (write 1 to clear) and INT_EN. A status bit is only set while
-+ * its interrupt is enabled.
-+ */
-+#define X1600_LCD_ST_STOPPED		BIT(7)
-+#define X1600_LCD_ST_UNDERRUN		BIT(8)
-+#define X1600_LCD_ST_FRM_DONE		BIT(17)	/* a descriptor was fetched */
++#define X1600_LCD_COM_CONFIG_BURST_LEN	GENMASK(5, 4)
++#define X1600_LCD_BURST_LEN_32		3
 +
-+/* CFG2: bits 5:4 are set by the vendor driver; their meaning is unknown. */
-+#define X1600_LCD_CFG2_VENDOR		GENMASK(5, 4)
-+
-+#define X1600_LCD_COM_CFG_IF		GENMASK(1, 0)
-+#define X1600_LCD_COM_CFG_IF_TFT	1
-+#define X1600_LCD_COM_CFG_DITHER_EN	BIT(4)
-+/* Bits 6:5 are set by the vendor driver; their meaning is unknown. */
-+#define X1600_LCD_COM_CFG_VENDOR	GENMASK(6, 5)
-+/* The bits kept per colour, 2 bits each: R 21:20, G 19:18, B 17:16. */
-+#define X1600_LCD_COM_CFG_DITHER	GENMASK(21, 16)
-+#define X1600_LCD_DITHER_RGB666		0x15
-+#define X1600_LCD_DITHER_RGB565		0x26
++#define X1600_LCD_DISP_COM_IF		GENMASK(1, 0)
++#define X1600_LCD_DISP_COM_IF_TFT	1
++#define X1600_LCD_DISP_COM_DITHER_EN	BIT(4)
++#define X1600_LCD_DISP_COM_TFT_CLKGATE	BIT(5)
++#define X1600_LCD_DISP_COM_SLCD_CLKGATE	BIT(6)
 +
 +/* TFT_HSYNC, TFT_VSYNC: sync length and total; TFT_HDE, TFT_VDE: active area. */
 +#define X1600_LCD_TIMING_START		GENMASK(27, 16)
 +#define X1600_LCD_TIMING_END		GENMASK(11, 0)
 +
-+#define X1600_LCD_TFT_CFG_COLOR_EVEN	GENMASK(21, 19)
-+#define X1600_LCD_TFT_CFG_COLOR_ODD	GENMASK(18, 16)
-+#define X1600_LCD_TFT_CFG_PIX_CLK_INV	BIT(10)
-+#define X1600_LCD_TFT_CFG_DE_LOW	BIT(9)
-+#define X1600_LCD_TFT_CFG_HSYNC_LOW	BIT(8)
-+#define X1600_LCD_TFT_CFG_VSYNC_LOW	BIT(7)
-+#define X1600_LCD_TFT_CFG_MODE		GENMASK(2, 0)
-+#define X1600_LCD_TFT_CFG_MODE_24BIT	0
-+/* The colour order the vendor driver uses for every RGB panel. */
-+#define X1600_LCD_TFT_COLOR_ORDER	2
++#define X1600_LCD_TFT_COLOR_EVEN	GENMASK(21, 19)
++#define X1600_LCD_TFT_COLOR_ODD		GENMASK(18, 16)
++#define X1600_LCD_TFT_PIX_CLK_INV	BIT(10)
++#define X1600_LCD_TFT_DE_DL		BIT(9)
++#define X1600_LCD_TFT_HSYNC_DL		BIT(8)
++#define X1600_LCD_TFT_VSYNC_DL		BIT(7)
++#define X1600_LCD_TFT_MODE		GENMASK(2, 0)
++#define X1600_LCD_TFT_MODE_24BIT	0
++/* RGB to BGR, as the vendor kernel sets it for the panels it supports. */
++#define X1600_LCD_TFT_COLOR_BGR		2
 +
 +#define X1600_LCD_DESC_CFG_FMT		GENMASK(22, 19)
 +#define X1600_LCD_DESC_FMT_RGB565	2
-+#define X1600_LCD_DESC_FMT_XRGB8888	4
-+/* Set by the vendor driver in every descriptor. */
-+#define X1600_LCD_DESC_CTRL_VENDOR	BIT(17)
++/* An interrupt at the end of the frame: DISP_END needs this and INTC set. */
++#define X1600_LCD_DESC_CTRL_EOD_MSK	BIT(17)
 +
++#define X1600_LCD_MAX_PIXELS		(1280 * 720)
++/* A smaller frame breaks a continuous descriptor chain (manual, 10.7). */
++#define X1600_LCD_MIN_PIXELS		500
 +#define X1600_LCD_STOP_TIMEOUT_MS	100
 +
 +/*
 + * The controller reads a descriptor at the start of each frame and then
 + * follows its next field. Each descriptor points at itself, so a frame
-+ * repeats until FRM_START makes the controller take another one.
++ * repeats until SRD_CHAIN_ADDR names another one.
 + */
 +struct x1600_lcd_desc {
 +	u32 next;
@@ -216,20 +211,21 @@ index 0000000..0c63b2e
 +
 +	struct x1600_lcd_desc *desc;
 +	dma_addr_t desc_phys;
-+	unsigned int cur;		/* the descriptor on screen */
++	unsigned int cur;		/* the descriptor last handed over */
 +	bool running;
 +	struct completion stopped;
-+	/* Serialises the read-modify-writes of INT_EN. */
++	/* Serialises the read-modify-writes of INTC. */
 +	spinlock_t irq_lock;
 +
-+	u32 bus_format;
++	/* Under drm.event_lock: sent once the controller reads event_desc. */
++	struct drm_pending_vblank_event *event;
++	u32 event_desc;
++
 +	u32 bus_flags;
-+	u32 dither;			/* COM_CFG dither bits */
 +};
 +
 +static const u32 x1600_lcd_formats[] = {
 +	DRM_FORMAT_RGB565,
-+	DRM_FORMAT_XRGB8888,
 +};
 +
 +static struct x1600_lcd *to_x1600_lcd(struct drm_device *drm)
@@ -248,14 +244,14 @@ index 0000000..0c63b2e
 +	u32 val;
 +
 +	spin_lock_irqsave(&lcd->irq_lock, flags);
-+	val = readl(lcd->base + X1600_LCD_INT_EN);
++	val = readl(lcd->base + X1600_LCD_INTC);
 +	if (enable)
 +		val |= mask;
 +	else
 +		val &= ~mask;
-+	/* A status bit set before its interrupt is masked keeps the line up. */
++	/* Seen on the R1: a bit still set when it is masked keeps the line up. */
 +	writel(mask, lcd->base + X1600_LCD_CLR_ST);
-+	writel(val, lcd->base + X1600_LCD_INT_EN);
++	writel(val, lcd->base + X1600_LCD_INTC);
 +	spin_unlock_irqrestore(&lcd->irq_lock, flags);
 +}
 +
@@ -265,23 +261,12 @@ index 0000000..0c63b2e
 +	unsigned long left;
 +
 +	reinit_completion(&lcd->stopped);
-+	x1600_lcd_irq_enable(lcd, X1600_LCD_ST_STOPPED, true);
-+	writel(X1600_LCD_CTRL_GEN_STOP, lcd->base + X1600_LCD_CTRL);
++	x1600_lcd_irq_enable(lcd, X1600_LCD_ST_STOP_SRD_ACK, true);
++	writel(X1600_LCD_CTRL_GEN_STP_SRD, lcd->base + X1600_LCD_CTRL);
 +	left = wait_for_completion_timeout(&lcd->stopped,
 +					   msecs_to_jiffies(X1600_LCD_STOP_TIMEOUT_MS));
-+	x1600_lcd_irq_enable(lcd, X1600_LCD_ST_STOPPED, false);
++	x1600_lcd_irq_enable(lcd, X1600_LCD_ST_STOP_SRD_ACK, false);
 +	return left;
-+}
-+
-+static void x1600_lcd_update_dither(struct x1600_lcd *lcd)
-+{
-+	u32 val = readl(lcd->base + X1600_LCD_COM_CFG);
-+
-+	val &= ~(X1600_LCD_COM_CFG_DITHER_EN | X1600_LCD_COM_CFG_DITHER);
-+	if (lcd->dither)
-+		val |= X1600_LCD_COM_CFG_DITHER_EN |
-+		       FIELD_PREP(X1600_LCD_COM_CFG_DITHER, lcd->dither);
-+	writel(val, lcd->base + X1600_LCD_COM_CFG);
 +}
 +
 +static u32 x1600_lcd_timing(unsigned int start, unsigned int end)
@@ -310,16 +295,11 @@ index 0000000..0c63b2e
 +	}
 +
 +	writel(readl(lcd->base + X1600_LCD_ST), lcd->base + X1600_LCD_CLR_ST);
-+	writel(readl(lcd->base + X1600_LCD_CFG2) | X1600_LCD_CFG2_VENDOR,
-+	       lcd->base + X1600_LCD_CFG2);
++	val = readl(lcd->base + X1600_LCD_COM_CONFIG) & ~X1600_LCD_COM_CONFIG_BURST_LEN;
++	writel(val | FIELD_PREP(X1600_LCD_COM_CONFIG_BURST_LEN, X1600_LCD_BURST_LEN_32),
++	       lcd->base + X1600_LCD_COM_CONFIG);
 +
-+	val = readl(lcd->base + X1600_LCD_COM_CFG);
-+	val &= ~X1600_LCD_COM_CFG_IF;
-+	val |= FIELD_PREP(X1600_LCD_COM_CFG_IF, X1600_LCD_COM_CFG_IF_TFT) |
-+	       X1600_LCD_COM_CFG_VENDOR;
-+	writel(val, lcd->base + X1600_LCD_COM_CFG);
-+	x1600_lcd_update_dither(lcd);
-+
++	/* In the manual's order: timings, output format, then the interface. */
 +	writel(x1600_lcd_timing(mode->hsync_end - mode->hsync_start, mode->htotal),
 +	       lcd->base + X1600_LCD_TFT_HSYNC);
 +	writel(x1600_lcd_timing(mode->vsync_end - mode->vsync_start, mode->vtotal),
@@ -329,21 +309,29 @@ index 0000000..0c63b2e
 +	writel(x1600_lcd_timing(vde, vde + mode->vdisplay),
 +	       lcd->base + X1600_LCD_TFT_VDE);
 +
-+	val = FIELD_PREP(X1600_LCD_TFT_CFG_COLOR_EVEN, X1600_LCD_TFT_COLOR_ORDER) |
-+	      FIELD_PREP(X1600_LCD_TFT_CFG_COLOR_ODD, X1600_LCD_TFT_COLOR_ORDER) |
-+	      FIELD_PREP(X1600_LCD_TFT_CFG_MODE, X1600_LCD_TFT_CFG_MODE_24BIT);
++	val = FIELD_PREP(X1600_LCD_TFT_COLOR_EVEN, X1600_LCD_TFT_COLOR_BGR) |
++	      FIELD_PREP(X1600_LCD_TFT_COLOR_ODD, X1600_LCD_TFT_COLOR_BGR) |
++	      FIELD_PREP(X1600_LCD_TFT_MODE, X1600_LCD_TFT_MODE_24BIT);
 +	if (lcd->bus_flags & DRM_BUS_FLAG_PIXDATA_DRIVE_NEGEDGE)
-+		val |= X1600_LCD_TFT_CFG_PIX_CLK_INV;
++		val |= X1600_LCD_TFT_PIX_CLK_INV;
 +	if (lcd->bus_flags & DRM_BUS_FLAG_DE_LOW)
-+		val |= X1600_LCD_TFT_CFG_DE_LOW;
++		val |= X1600_LCD_TFT_DE_DL;
++	/* The *_DL bits set the level outside the pulse. */
 +	if (mode->flags & DRM_MODE_FLAG_NHSYNC)
-+		val |= X1600_LCD_TFT_CFG_HSYNC_LOW;
++		val |= X1600_LCD_TFT_HSYNC_DL;
 +	if (mode->flags & DRM_MODE_FLAG_NVSYNC)
-+		val |= X1600_LCD_TFT_CFG_VSYNC_LOW;
-+	writel(val, lcd->base + X1600_LCD_TFT_CFG);
++		val |= X1600_LCD_TFT_VSYNC_DL;
++	writel(val, lcd->base + X1600_LCD_TFT_TRAN_CFG);
 +
-+	writel(x1600_lcd_desc_addr(lcd, lcd->cur), lcd->base + X1600_LCD_FRM_DESC);
-+	writel(1, lcd->base + X1600_LCD_FRM_START);
++	/* No dithering: it only applies to 888 sources. */
++	val = readl(lcd->base + X1600_LCD_DISP_COM);
++	val &= ~(X1600_LCD_DISP_COM_IF | X1600_LCD_DISP_COM_DITHER_EN);
++	val |= FIELD_PREP(X1600_LCD_DISP_COM_IF, X1600_LCD_DISP_COM_IF_TFT) |
++	       X1600_LCD_DISP_COM_TFT_CLKGATE | X1600_LCD_DISP_COM_SLCD_CLKGATE;
++	writel(val, lcd->base + X1600_LCD_DISP_COM);
++
++	writel(x1600_lcd_desc_addr(lcd, lcd->cur), lcd->base + X1600_LCD_SRD_CHAIN_ADDR);
++	writel(1, lcd->base + X1600_LCD_SRD_CHAIN_START);
 +	lcd->running = true;
 +
 +	drm_crtc_vblank_on(crtc);
@@ -354,12 +342,32 @@ index 0000000..0c63b2e
 +{
 +	struct x1600_lcd *lcd = to_x1600_lcd(crtc->dev);
 +
-+	drm_crtc_vblank_off(crtc);
-+
 +	if (!x1600_lcd_stop(lcd))
 +		dev_warn(lcd->drm.dev, "The controller did not stop\n");
 +	lcd->running = false;
++
++	spin_lock_irq(&crtc->dev->event_lock);
++	if (lcd->event) {
++		drm_crtc_send_vblank_event(crtc, lcd->event);
++		drm_crtc_vblank_put(crtc);
++		lcd->event = NULL;
++	}
++	spin_unlock_irq(&crtc->dev->event_lock);
++
++	drm_crtc_vblank_off(crtc);
 +	clk_disable_unprepare(lcd->clk);
++}
++
++static int x1600_lcd_crtc_atomic_check(struct drm_crtc *crtc,
++				       struct drm_atomic_commit *state)
++{
++	struct drm_crtc_state *crtc_state = drm_atomic_get_new_crtc_state(state, crtc);
++
++	/* Only when enabled: drm_atomic_helper_shutdown() disables both at once. */
++	if (!crtc_state->enable)
++		return 0;
++
++	return drm_atomic_helper_check_crtc_primary_plane(crtc_state);
 +}
 +
 +static void x1600_lcd_crtc_atomic_flush(struct drm_crtc *crtc,
@@ -367,25 +375,45 @@ index 0000000..0c63b2e
 +{
 +	struct drm_crtc_state *crtc_state = drm_atomic_get_new_crtc_state(state, crtc);
 +	struct drm_pending_vblank_event *event = crtc_state->event;
++	struct x1600_lcd *lcd = to_x1600_lcd(crtc->dev);
 +
 +	if (!event)
 +		return;
 +
 +	crtc_state->event = NULL;
 +
++	/*
++	 * The controller takes a new descriptor "at appropriate time" (manual,
++	 * 10.6.4): wait until it reports reading the one just handed over.
++	 */
 +	spin_lock_irq(&crtc->dev->event_lock);
-+	if (drm_crtc_vblank_get(crtc) == 0)
-+		drm_crtc_arm_vblank_event(crtc, event);
-+	else
++	if (lcd->running && !WARN_ON(lcd->event) && drm_crtc_vblank_get(crtc) == 0) {
++		lcd->event = event;
++		lcd->event_desc = x1600_lcd_desc_addr(lcd, lcd->cur);
++	} else {
 +		drm_crtc_send_vblank_event(crtc, event);
++	}
 +	spin_unlock_irq(&crtc->dev->event_lock);
 +}
 +
 +static enum drm_mode_status
 +x1600_lcd_crtc_mode_valid(struct drm_crtc *crtc, const struct drm_display_mode *mode)
 +{
++	unsigned int pixels = mode->hdisplay * mode->vdisplay;
++
 +	if (mode->htotal > FIELD_MAX(X1600_LCD_TIMING_END) ||
 +	    mode->vtotal > FIELD_MAX(X1600_LCD_TIMING_END))
++		return MODE_BAD;
++
++	/* The sync pulses' end points must not be 0. */
++	if (mode->hsync_end == mode->hsync_start)
++		return MODE_HSYNC_NARROW;
++	if (mode->vsync_end == mode->vsync_start)
++		return MODE_VSYNC_NARROW;
++
++	if (pixels > X1600_LCD_MAX_PIXELS)
++		return MODE_MEM;
++	if (pixels < X1600_LCD_MIN_PIXELS)
 +		return MODE_BAD;
 +
 +	return MODE_OK;
@@ -395,7 +423,7 @@ index 0000000..0c63b2e
 +{
 +	struct x1600_lcd *lcd = to_x1600_lcd(crtc->dev);
 +
-+	x1600_lcd_irq_enable(lcd, X1600_LCD_ST_FRM_DONE, true);
++	x1600_lcd_irq_enable(lcd, X1600_LCD_ST_DISP_END, true);
 +	return 0;
 +}
 +
@@ -403,24 +431,34 @@ index 0000000..0c63b2e
 +{
 +	struct x1600_lcd *lcd = to_x1600_lcd(crtc->dev);
 +
-+	x1600_lcd_irq_enable(lcd, X1600_LCD_ST_FRM_DONE, false);
++	x1600_lcd_irq_enable(lcd, X1600_LCD_ST_DISP_END, false);
 +}
 +
 +static irqreturn_t x1600_lcd_irq(int irq, void *data)
 +{
 +	struct x1600_lcd *lcd = data;
-+	u32 st = readl(lcd->base + X1600_LCD_ST);
++	u32 st = readl(lcd->base + X1600_LCD_INT_FLAG);
 +
 +	if (!st)
 +		return IRQ_NONE;
 +
-+	/* All of it: a bit whose interrupt was just masked still raises the line. */
 +	writel(st, lcd->base + X1600_LCD_CLR_ST);
-+	st &= readl(lcd->base + X1600_LCD_INT_EN);
-+	if (st & X1600_LCD_ST_STOPPED)
++	if (st & X1600_LCD_ST_STOP_SRD_ACK)
 +		complete(&lcd->stopped);
-+	if (st & X1600_LCD_ST_FRM_DONE)
++
++	if (st & X1600_LCD_ST_DISP_END) {
 +		drm_crtc_handle_vblank(&lcd->crtc);
++
++		spin_lock(&lcd->drm.event_lock);
++		if (lcd->event &&
++		    readl(lcd->base + X1600_LCD_CHAIN_SITE) == lcd->event_desc) {
++			drm_crtc_send_vblank_event(&lcd->crtc, lcd->event);
++			drm_crtc_vblank_put(&lcd->crtc);
++			lcd->event = NULL;
++		}
++		spin_unlock(&lcd->drm.event_lock);
++	}
++
 +	return IRQ_HANDLED;
 +}
 +
@@ -452,40 +490,26 @@ index 0000000..0c63b2e
 +	struct drm_framebuffer *fb = plane_state->fb;
 +	unsigned int next = lcd->running ? !lcd->cur : lcd->cur;
 +	struct x1600_lcd_desc *desc = &lcd->desc[next];
-+	u32 fmt, dither = 0;
 +
 +	if (!fb)
 +		return;
 +
-+	if (fb->format->format == DRM_FORMAT_XRGB8888) {
-+		fmt = X1600_LCD_DESC_FMT_XRGB8888;
-+		if (lcd->bus_format == MEDIA_BUS_FMT_RGB666_1X18)
-+			dither = X1600_LCD_DITHER_RGB666;
-+		else if (lcd->bus_format == MEDIA_BUS_FMT_RGB565_1X16)
-+			dither = X1600_LCD_DITHER_RGB565;
-+	} else {
-+		fmt = X1600_LCD_DESC_FMT_RGB565;
-+	}
-+
 +	desc->next = x1600_lcd_desc_addr(lcd, next);
 +	desc->addr = drm_fb_dma_get_gem_addr(fb, plane_state, 0);
 +	desc->stride = fb->pitches[0] / fb->format->cpp[0];
-+	desc->cfg = FIELD_PREP(X1600_LCD_DESC_CFG_FMT, fmt);
-+	desc->ctrl = X1600_LCD_DESC_CTRL_VENDOR;
-+
-+	if (dither != lcd->dither) {
-+		lcd->dither = dither;
-+		if (lcd->running)
-+			x1600_lcd_update_dither(lcd);
-+	}
++	desc->cfg = FIELD_PREP(X1600_LCD_DESC_CFG_FMT, X1600_LCD_DESC_FMT_RGB565);
++	desc->ctrl = X1600_LCD_DESC_CTRL_EOD_MSK;
 +
 +	if (!lcd->running)
 +		return;
 +
-+	/* Fetched at the end of the current frame, as the vendor driver flips. */
++	/*
++	 * The manual hands over a descriptor by writing SRD_CHAIN_ADDR; the
++	 * vendor kernel also sets SRD_CHAIN_START, and so does this.
++	 */
 +	wmb();
-+	writel(x1600_lcd_desc_addr(lcd, next), lcd->base + X1600_LCD_FRM_DESC);
-+	writel(1, lcd->base + X1600_LCD_FRM_START);
++	writel(x1600_lcd_desc_addr(lcd, next), lcd->base + X1600_LCD_SRD_CHAIN_ADDR);
++	writel(1, lcd->base + X1600_LCD_SRD_CHAIN_START);
 +	lcd->cur = next;
 +}
 +
@@ -494,10 +518,8 @@ index 0000000..0c63b2e
 +					      struct drm_connector_state *conn_state)
 +{
 +	struct x1600_lcd *lcd = to_x1600_lcd(encoder->dev);
-+	struct drm_display_info *info = &conn_state->connector->display_info;
 +
-+	lcd->bus_flags = info->bus_flags;
-+	lcd->bus_format = info->num_bus_formats ? info->bus_formats[0] : 0;
++	lcd->bus_flags = conn_state->connector->display_info.bus_flags;
 +}
 +
 +static const struct drm_plane_funcs x1600_lcd_plane_funcs = {
@@ -526,6 +548,7 @@ index 0000000..0c63b2e
 +};
 +
 +static const struct drm_crtc_helper_funcs x1600_lcd_crtc_helper_funcs = {
++	.atomic_check		= x1600_lcd_crtc_atomic_check,
 +	.atomic_enable		= x1600_lcd_crtc_atomic_enable,
 +	.atomic_disable		= x1600_lcd_crtc_atomic_disable,
 +	.atomic_flush		= x1600_lcd_crtc_atomic_flush,
@@ -598,6 +621,7 @@ index 0000000..0c63b2e
 +	if (ret)
 +		return ret;
 +
++	/* Framebuffers, not modes: fbdev's double buffer is taller than 720p. */
 +	drm->mode_config.max_width = FIELD_MAX(X1600_LCD_TIMING_END);
 +	drm->mode_config.max_height = FIELD_MAX(X1600_LCD_TIMING_END);
 +	drm->mode_config.funcs = &x1600_lcd_mode_config_funcs;
@@ -647,7 +671,7 @@ index 0000000..0c63b2e
 +		return ret;
 +
 +	/* No interrupt from what the boot loader left enabled or pending. */
-+	writel(0, lcd->base + X1600_LCD_INT_EN);
++	writel(0, lcd->base + X1600_LCD_INTC);
 +	writel(readl(lcd->base + X1600_LCD_ST), lcd->base + X1600_LCD_CLR_ST);
 +
 +	ret = devm_request_irq(dev, irq, x1600_lcd_irq, 0, dev_name(dev), lcd);
@@ -656,9 +680,14 @@ index 0000000..0c63b2e
 +		return dev_err_probe(dev, ret, "Unable to request the IRQ\n");
 +	}
 +
-+	/* Nothing reports the stop if the controller was not running. */
-+	if (!x1600_lcd_stop(lcd) && readl(lcd->base + X1600_LCD_STATE) & X1600_LCD_STATE_STUCK)
-+		dev_err(dev, "The controller is halted after an underrun\n");
++	/*
++	 * Seen on the R1: after an underrun (TFT_UNDR) the controller can stop
++	 * answering GEN_STP_SRD, and only a reset brings it back.
++	 */
++	if (readl(lcd->base + X1600_LCD_ST) & X1600_LCD_ST_WORKING && !x1600_lcd_stop(lcd))
++		dev_err(dev, "The controller did not stop%s\n",
++			readl(lcd->base + X1600_LCD_ST) & X1600_LCD_ST_TFT_UNDR ?
++			" after an underrun" : "");
 +	clk_disable_unprepare(lcd->clk);
 +
 +	ret = drm_dev_register(drm, 0);
@@ -701,6 +730,7 @@ index 0000000..0c63b2e
 +};
 +module_platform_driver(x1600_lcd_platform_driver);
 +
++MODULE_AUTHOR("Olivier Louvignes <olivier@mgcrea.io>");
 +MODULE_DESCRIPTION("DRM driver for the Ingenic X1600 LCD controller");
 +MODULE_LICENSE("GPL");
 -- 

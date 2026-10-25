@@ -1,17 +1,18 @@
-From 93c0058fe98d2bab29e7efc8e5cf890052ea64fc Mon Sep 17 00:00:00 2001
+From 025813296bc9b959778b6be7c0696a4760e44527 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:05:52 +0000
-Subject: [PATCH 29/55] drm/panel: add the HiBy LG35583
+Subject: [PATCH 29/57] drm/panel: add the HiBy LG35583
 
-The 480x800 parallel RGB panel of the HiBy R1. It is set up over a 3-wire SPI
-bus with 16-bit words, each carrying a register address byte or a data byte,
-which no existing panel driver speaks. The set-up sequence is the vendor
-kernel's.
+The 480x800 parallel RGB panel of the HiBy R1. It is set up over a 3-wire
+SPI bus with 16-bit words, each carrying a register address byte or a
+data byte, which no existing panel driver speaks. The set-up sequence is
+the vendor kernel's; prepare sends it up to sleep-out, and enable and
+disable switch the display on and off.
 ---
  drivers/gpu/drm/panel/Kconfig              |   8 +
  drivers/gpu/drm/panel/Makefile             |   1 +
- drivers/gpu/drm/panel/panel-hiby-lg35583.c | 317 +++++++++++++++++++++
- 3 files changed, 326 insertions(+)
+ drivers/gpu/drm/panel/panel-hiby-lg35583.c | 341 +++++++++++++++++++++
+ 3 files changed, 350 insertions(+)
  create mode 100644 drivers/gpu/drm/panel/panel-hiby-lg35583.c
 
 diff --git a/drivers/gpu/drm/panel/Kconfig b/drivers/gpu/drm/panel/Kconfig
@@ -47,13 +48,15 @@ index 3b523cf..4eb41bf 100644
  obj-$(CONFIG_DRM_PANEL_HIMAX_HX83112A) += panel-himax-hx83112a.o
 diff --git a/drivers/gpu/drm/panel/panel-hiby-lg35583.c b/drivers/gpu/drm/panel/panel-hiby-lg35583.c
 new file mode 100644
-index 0000000..44b3983
+index 0000000..d5507d1
 --- /dev/null
 +++ b/drivers/gpu/drm/panel/panel-hiby-lg35583.c
-@@ -0,0 +1,317 @@
+@@ -0,0 +1,341 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * The LG35583 panel of the HiBy R1
++ *
++ * Copyright (c) 2026 Olivier Louvignes <olivier@mgcrea.io>
 + *
 + * A 480x800 parallel RGB panel, set up over a 3-wire SPI bus with 16-bit
 + * words: 0x20 and a register's high byte, 0x00 and its low byte, then 0x40
@@ -149,8 +152,6 @@ index 0000000..44b3983
 +	DELAY(5),
 +	CMD(LG35583_SLPOUT),
 +	DELAY(130),
-+	CMD(LG35583_DISPON),
-+	CMD(LG35583_RAMWR),
 +};
 +
 +struct lg35583 {
@@ -182,7 +183,8 @@ index 0000000..44b3983
 +
 +static int lg35583_word(struct lg35583 *ctx, u16 word)
 +{
-+	return spi_write(ctx->spi, &word, sizeof(word));
++	/* Copied to a DMA-safe buffer. */
++	return spi_write_then_read(ctx->spi, &word, sizeof(word), NULL, 0);
 +}
 +
 +static int lg35583_cmd(struct lg35583 *ctx, u16 reg)
@@ -251,12 +253,32 @@ index 0000000..44b3983
 +	return ret;
 +}
 +
++static int lg35583_enable(struct drm_panel *panel)
++{
++	struct lg35583 *ctx = to_lg35583(panel);
++	int ret;
++
++	ret = lg35583_cmd(ctx, LG35583_DISPON);
++	if (ret)
++		return ret;
++
++	return lg35583_cmd(ctx, LG35583_RAMWR);
++}
++
++static int lg35583_disable(struct drm_panel *panel)
++{
++	struct lg35583 *ctx = to_lg35583(panel);
++	int ret;
++
++	ret = lg35583_cmd(ctx, LG35583_DISPOFF);
++	usleep_range(5000, 6000);
++	return ret;
++}
++
 +static int lg35583_unprepare(struct drm_panel *panel)
 +{
 +	struct lg35583 *ctx = to_lg35583(panel);
 +
-+	lg35583_cmd(ctx, LG35583_DISPOFF);
-+	usleep_range(5000, 6000);
 +	lg35583_cmd(ctx, LG35583_SLPIN);
 +	usleep_range(5000, 6000);
 +
@@ -288,6 +310,8 @@ index 0000000..44b3983
 +
 +static const struct drm_panel_funcs lg35583_funcs = {
 +	.prepare = lg35583_prepare,
++	.enable = lg35583_enable,
++	.disable = lg35583_disable,
 +	.unprepare = lg35583_unprepare,
 +	.get_modes = lg35583_get_modes,
 +};
@@ -366,6 +390,7 @@ index 0000000..44b3983
 +};
 +module_spi_driver(lg35583_driver);
 +
++MODULE_AUTHOR("Olivier Louvignes <olivier@mgcrea.io>");
 +MODULE_DESCRIPTION("HiBy R1 LG35583 panel driver");
 +MODULE_LICENSE("GPL");
 -- 

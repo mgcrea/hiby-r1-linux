@@ -1,0 +1,69 @@
+From 9b891db21c4140c6b06cf30bcd46cd9f9c2616c9 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 07:27:24 +0000
+Subject: [PATCH 11/57] i2c: jz4780: program the spike suppression length
+
+The X1000 and the SoCs after it (X1830, X1600) have a spike suppression
+register at 0xa0: I2C_FLT in the X1000 programming manual, SMB_FLT in
+the X1830's, FS_SPKLEN in the X1600's. It holds the longest pulse on SCL
+or SDA, in APB clock cycles, that the controller filters out. It resets
+to 1, and the driver never writes it, so it keeps whatever ran before.
+
+On a HiBy R1 (X1600) started from the vendor kernel, the register held
+116. At 400 kHz with a 140 MHz APB clock, SCL is high for 102 cycles,
+so the filter hides the controller's own clock and every transfer ends
+in a lost arbitration (TXABRT 0x1000). Driving reads by hand on the R1
+with the filter set to each value: they work from 1 to 100 cycles and
+fail at 110 and above.
+
+Program the 50 ns the I2C specification sets as the longest spike to
+suppress in Fast-mode, rounded up to whole APB cycles (7 at 140 MHz).
+With it, the R1 reads back 7 on both controllers; after setting the
+filter to 116 by hand, the next transfer puts 7 back and 50 reads out of
+50 succeed.
+
+Suggested-by: H. Nikolaus Schaller <hns@goldelico.com>
+---
+ drivers/i2c/busses/i2c-jz4780.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/drivers/i2c/busses/i2c-jz4780.c b/drivers/i2c/busses/i2c-jz4780.c
+index 695be3b..d1bb75d 100644
+--- a/drivers/i2c/busses/i2c-jz4780.c
++++ b/drivers/i2c/busses/i2c-jz4780.c
+@@ -58,6 +58,7 @@
+ #define JZ4780_I2C_ENSTA	0x9C
+ #define JZ4780_I2C_SDAHD	0xD0
+ #define X1000_I2C_SDAHD		0x7C
++#define X1000_I2C_FLT		0xA0
+ 
+ #define JZ4780_I2C_CTRL_STPHLD		BIT(7)
+ #define JZ4780_I2C_CTRL_SLVDIS		BIT(6)
+@@ -253,6 +254,7 @@ static int jz4780_i2c_set_speed(struct jz4780_i2c *i2c)
+ 	int cnt_period = 0;	/* period count of the SCL clock */
+ 	int setup_time = 0;
+ 	int hold_time = 0;
++	int spike_len;
+ 	unsigned short tmp = 0;
+ 	int i2c_clk = i2c->speed;
+ 
+@@ -356,6 +358,16 @@ static int jz4780_i2c_set_speed(struct jz4780_i2c *i2c)
+ 			jz4780_i2c_writew(i2c, JZ4780_I2C_SDAHD, 0);
+ 	}
+ 
++	/*
++	 * The spike filter keeps whatever ran before left in it, and one longer
++	 * than the SCL high period makes every transfer lose arbitration. Use
++	 * the 50 ns the I2C specification sets for Fast-mode spikes.
++	 */
++	if (i2c->cdata->version >= ID_X1000) {
++		spike_len = DIV_ROUND_UP(50 * dev_clk_khz, 1000000);
++		jz4780_i2c_writew(i2c, X1000_I2C_FLT, clamp(spike_len, 1, 255));
++	}
++
+ 	return 0;
+ }
+ 
+-- 
+2.39.5
+
