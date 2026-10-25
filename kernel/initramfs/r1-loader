@@ -11,6 +11,12 @@
 # kernel's init clears it (r1-loader done). Found still PENDING after a
 # reset, the card kernel failed: this kernel carries on instead, once.
 #
+# Holding power to restart loses CPSPR, so the same goes on the card too:
+# kexec-pending, written before the kexec with the kernel's size and time
+# and removed by r1-loader done. Found there naming the same kernel, that
+# kernel failed: this one carries on until a different kernel is copied to
+# the card (or the file is removed).
+#
 #   r1-loader          decide, and kexec or return
 #   r1-loader done     clear PENDING (the card kernel came up)
 ML=/mnt/sd_0/.r1-mainline
@@ -22,20 +28,37 @@ PENDING=0x52314b58	# "R1KX"
 # To the kernel log as well, where dmesg keeps it.
 log() { echo "r1-loader: $*"; echo "r1-loader: $*" > /dev/kmsg; }
 
+MARK=$ML/kexec-pending
+# Runs "$@" with the card writable for that moment.
+on_card() {
+	mount -o remount,rw /mnt/sd_0 || return 1
+	"$@"
+	sync
+	mount -o remount,ro /mnt/sd_0
+}
+
 cpspr() {
 	devmem $CPSPPR 32 0x5a5a
 	devmem $CPSPR 32 $1
 	devmem $CPSPPR 32 0xa5a5
 }
 
+# done comes from init in either kernel; only the card kernel, started by
+# kexec, takes the marker away: a flash kernel that stayed because of it
+# keeps it, so the next start stays too.
 if [ "$1" = done ]; then
 	[ $(($(devmem $CPSPR 32))) = $((PENDING)) ] && cpspr 0
+	[ -e /tmp/r1-loader.kexec ] && [ -e $MARK ] && on_card rm -f $MARK
 	exit 0
 fi
 
 rsr=$(devmem $RSR 32)
 devmem $RSR 32 0
-[ $((rsr)) = 0 ] && { log "reset cause 0: started by kexec or r1jump"; exit 0; }
+if [ $((rsr)) = 0 ]; then
+	log "reset cause 0: started by kexec or r1jump"
+	touch /tmp/r1-loader.kexec
+	exit 0
+fi
 log "reset cause $rsr: started by the boot loader"
 
 if [ $(($(devmem $CPSPR 32))) = $((PENDING)) ]; then
@@ -52,11 +75,18 @@ if [ -n "$key" ] && [ $key -ge 1000 ] && [ $key -le 1800 ]; then
 fi
 [ -e /mnt/sd_0/.no-kexec ] && { log ".no-kexec on the card"; exit 0; }
 [ -f $ML/r1-linux.bin ] && [ -f $ML/entry ] || { log "no kernel on the card"; exit 0; }
+stamp=$(stat -c '%s %Y' $ML/r1-linux.bin)
+if [ "$(cat $MARK 2>/dev/null)" = "$stamp" ]; then
+	log "the card's kernel ($stamp) didn't come up last time: staying on this one until it changes"
+	exit 0
+fi
 
 log "starting the card's kernel"
 cpspr $PENDING
+on_card sh -c "echo '$stamp' > $MARK" || log "couldn't mark the card: a restart won't know if this kernel fails"
 r1kexec $ML/r1-linux.bin 0x80100000 $(cat $ML/entry)
 # Only reached if kexec failed.
 log "kexec failed: staying on this kernel"
 cpspr 0
+on_card rm -f $MARK
 exit 0
