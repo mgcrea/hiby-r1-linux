@@ -7,6 +7,13 @@ mount -t devtmpfs dev /dev
 # Pseudo-terminals: r1player runs bluetoothctl on one, which buffers its
 # output on a pipe.
 mkdir -p /dev/pts && mount -t devpts devpts /dev/pts
+# The watchdog: nothing before us armed it (the SPL doesn't), so a frozen
+# kernel or a stuck boot would wait for a power-button restart. Opening it
+# starts it; the daemon feeds it every 2 s and it resets the R1 10 s after
+# the last time, after a panic too (the screen then keeps its last frame).
+watchdog -T 10 -t 2 /dev/watchdog
+# What the last boot logged before a reset, or its oops (ramoops).
+mount -t pstore pstore /sys/fs/pstore
 echo
 echo "HiBy R1: Linux $(uname -r) is up"
 grep -E "system type|cpu model|BogoMIPS" /proc/cpuinfo
