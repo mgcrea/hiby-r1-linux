@@ -11,7 +11,7 @@ which is the best reference for anything not listed here.
 - **Caches** (from Config1/Config2): L1 I and D 16 KB each, L2 128 KB, all with 32-byte lines.
 - **Kernel and userland:** Linux 4.4.94 (built 2025-12-29), Buildroot 2020.02, glibc 2.22 hard-float o32 (`/lib/ld.so.1`).
 - **RAM:** 56 MB. About 17 MB is available while `hiby_player` is paused, because a stopped process keeps its 14 MB resident.
-- **Display:** `jzfb`, 480×800 RGB565, two pages stacked vertically (`yres_virtual` 1600), switched with `FBIOPAN_DISPLAY`. `read()` on `/dev/fb0` returns page 0 only, whichever page is on screen. That's why `./dev shot` goes through `r1player --shot`. Near-white greys turn pink in RGB565, because green keeps 6 bits and red and blue 5 (0xf9fafb and 0xf2f3f5 both showed it, 2026-10-23); a grey whose 5- and 6-bit expansions agree stays grey, such as 0xefefef or 0xffffff.
+- **Display:** `jzfb`, 480×800 RGB565, two pages stacked vertically (`yres_virtual` 1600), switched with `FBIOPAN_DISPLAY`. `read()` on `/dev/fb0` returns page 0 only, whichever page is on screen, so a screenshot has to come from the app drawing it. Near-white greys turn pink in RGB565, because green keeps 6 bits and red and blue 5 (0xf9fafb and 0xf2f3f5 both showed it, 2026-10-23); a grey whose 5- and 6-bit expansions agree stays grey, such as 0xefefef or 0xffffff.
 - **Backlight:** `/sys/class/backlight/backlight_pwm0`, max 101. `hiby_player` can leave it at 0 when it's paused, so the screen looks dead.
 - **Inputs:**
 
@@ -23,14 +23,14 @@ which is the best reference for anything not listed here.
   | `event3` | `earpods_adc` | headset remote |
 
 - **Audio device:** card 0 only (`pcmC0D0p`, `controlC0`), with a CS43131 DAC. There is no `/proc/asound`.
-- **PCM format:** the PCM rejects S32_LE and accepts S16_LE and S24_LE (24 bits in a 32-bit container) stereo at 44.1 kHz; r1player plays S24_LE cleanly (2026-10-23). Other rates weren't tried.
+- **PCM format:** the PCM rejects S32_LE and accepts S16_LE and S24_LE (24 bits in a 32-bit container) stereo at 44.1 kHz; S24_LE plays cleanly (2026-10-23). Other rates weren't tried.
 - **Mixer controls:**
   - `Output Port Switch` must be 2 for headphones (verified). Rockbox uses 3 for balanced (not verified). The default 0 is silent.
-  - `Left/Right Playback Volume` (0–255) always read back 0, even after `amixer cset`, so the player does volume in software. Rockbox treats the value as attenuation in 0.5 dB steps, with 0 the loudest.
+  - `Left/Right Playback Volume` (0–255) always read back 0, even after `amixer cset`, so volume has to be done in software. Rockbox treats the value as attenuation in 0.5 dB steps, with 0 the loudest.
   - Others: `Mute Output`, `Soft Mute`, `DOP_EN`, `Digital Filter`.
 - **Headphone detection:** `/sys/class/switch/headset/state`. This unit has no `balance` switch file.
 - **SD card:** `/dev/mmcblk0p1`, exFAT. The stock player mounts it at `/mnt/sd_0` and unmounts it whenever it hands the card to a USB host.
-- **Names copied from macOS:** they contain SFM private-use characters (U+F020–F029) in place of characters that FAT/exFAT forbid. See `library::display_name`.
+- **Names copied from macOS:** they contain SFM private-use characters (U+F020–F029) in place of characters that FAT/exFAT forbid.
 - **Font:** `/usr/resource/fonts/default.otf` is Noto Sans SC DemiLight (CJK, CFF, 30,888 glyphs, complete Latin-1), but its `…` is drawn at mid-height.
 - **Flash (`/proc/mtd`):** uboot, kernel, rootfs, kernel2, rootfs2, ota, userdata. userdata is UBIFS, mounted at `/usr/data`. How the bootloader picks a slot is in `docs/kernel.md`.
 - **Process layout:** `/usr/bin/hiby_player.sh` runs `reboot` when `hiby_player` exits. Pause it with SIGSTOP; don't kill it.
@@ -49,13 +49,13 @@ which is the best reference for anything not listed here.
 - **The r1player firmware (flashed 2026-10-22):** the ADB image plus a new `/usr/bin/hiby_player.sh` that runs `/usr/data/r1player/r1player` in place of the stock player.
   - It mounts the card read-only at `/usr/data/mnt/sd_0` and binds the USB gadget with ADB only, so the Mac sees no storage while r1player runs.
   - The stock `hiby_player` takes over when a `.stock` file exists at the card root, or when r1player is missing. When r1player exits non-zero (including `kill -9` over ADB), the launcher writes `/usr/data/r1player/stock-once` and reboots; the next boot runs the stock player and deletes the flag. Firmware updates still go through the stock player's Settings.
-  - r1player exiting 0 (it does on SIGTERM) relaunches it; `./dev run` uses that to deploy. Its output goes to `/usr/data/r1player/r1player.log` (`.old` keeps the previous boot's). It takes commands on the named pipe `/tmp/r1player.ctl` (`play PATH`, `key playpause`, `tap X Y`...) and writes its state to `/tmp/r1player.status`: `adb shell "echo 'key next' > /tmp/r1player.ctl"` drives it without anyone at the R1 (see `player/src/ctl.rs`).
-  - It keeps its state in `/usr/data/r1player`: the library index, covers and thumbnails, `scores` (best scores, and where each game starts as `<game>.progress`: chosen in Settings → Games, and moved by Sums and Clock as they're played) and `settings` (brightness, screen off, volume and its limit, Bluetooth on or off and the last headset), both as `key value` lines. Deleting `settings` brings back the defaults. Under mainline `/usr/data` is in RAM, so r1player also copies `scores`, `settings` and BlueZ's pairings to `$R1_STATE` on the card after each change, and init copies them back at boot (`player/src/state.rs`, `docs/kernel.md`).
+  - r1player exiting 0 relaunches it, so killing it with SIGTERM deploys a new build. Its output goes to `/usr/data/r1player/r1player.log` (`.old` keeps the previous boot's).
+  - Under mainline `/usr/data` is in RAM, so state that has to outlive a restart goes to `$R1_STATE` on the card, and init copies it back at boot (`kernel/initramfs/init`, `docs/kernel.md`).
   - Verified on the first boot: r1player draws its UI, ADB comes up without `hiby_player`, and `free` reports 34.7 MB available (about 19 MB under the stock player).
   - **Why the fallback reboots:** `hiby_player` opens `/dev/sa_hgl_dma`, whose driver allocates 8 MB of physically contiguous memory (an order-11 `dma_alloc_coherent`). After r1player has run for a few seconds no such block is left, and this kernel has no memory compaction (`/proc/sys/vm/compact_memory` is absent; `drop_caches` doesn't help). The open fails (`hgl_fb: E) Access hgl dma failed`, and `sahd_open: malloc hgl memory error` in dmesg), and `hiby_player` runs without a display, though it does resume playback. Started first thing after boot, it works. Verified 2026-10-22: `kill -9` on r1player rebooted into a working stock UI, and the boot after that ran r1player again.
   - **Unplugging breaks ADB until a restart (2026-10-23).** On unplug the vendor kernel unbinds the gadget (`/sys/kernel/config/usb_gadget/android0/UDC` goes empty); on replug the OTG controller comes up as a USB host and enumerates the Mac as a device (`New USB device found, idVendor=05ac`). `hiby_player` handled this; the launcher doesn't. Rebinding `UDC` from a watcher loop doesn't help: the gadget binds again, but on replug the controller still takes the host role. The cause is the USB-C controller: the stock firmware leaves the TCS1421 dual-role (its CFG0/CFG1 pins, PA9 and PB24, both high), so a plug-in can attach as a source; `docs/kernel.md` ("USB-C role") has the details. Untested on stock: writing `Sink` to `/sys/devices/platform/tcs1421/tcs1421_cfg` from the launcher might keep ADB alive across replugs. The mainline kernel survives a replug (the port held as a sink, plus a `dwc2` fix, `docs/kernel.md`); on the stock kernel, restart the R1 after unplugging it.
   - Not verified yet: audio without `hiby_player` having initialised the codec, power-off and low-battery behaviour with no stock UI.
-- **Building an image:** `firmware/build.sh` applies `firmware/overlay/` to the stock rootfs, then `repack.sh` builds the `.upt` and `verify.sh` checks it against stock. The script comments describe the `.upt` format (ISO 9660, chained-MD5 chunks, no signature).
+- **Building an image:** `firmware/build.sh` adds `firmware/overlay/` to the stock rootfs and applies `firmware/patches/` to HiBy's scripts, then `repack.sh` builds the `.upt` and `verify.sh` checks it against stock. The script comments describe the `.upt` format (ISO 9660, chained-MD5 chunks, no signature).
 - **Installing and reverting:** since 2026-10-24 no stock player runs, so the only way to flash an `r1.upt` is Volume Up held at power-on with it at the card root (HiBy's recovery, `docs/kernel.md`). Before that, the user put `r1.upt` at the SD card root and ran Settings → Firmware update. The update flashes whatever `r1.upt` is on the card, so compare its md5 with the build first: a stale copy once reflashed the previous image. While the stock player runs, the card is mounted read-write at `/usr/data/mnt/sd_0`, so the image can be pushed there with `adb push`. To go back, flash the stock `~/Downloads/r1.upt` (sha256 `9aada819…ba60`) the same way.
 - **On the host:**
   - adb lists the R1 as `(no serial number) … model:Nexus_4`, and the shell runs as root.
@@ -64,17 +64,10 @@ which is the best reference for anything not listed here.
 
 ## Decisions
 
-- **Stock kernel:** the player runs on the stock 4.4 kernel. A port to mainline started on 2026-10-22; see `docs/kernel.md` for its status, the boot chain and the references.
-  - The panel (`lcd_lg35583`), touch (`cst8xx_touch`), PMIC (`axp2101`) and sound-card glue are closed vendor modules in `/module_driver`. Open GPL rewrites of them exist; `docs/kernel.md` lists them.
-- **Toolchain:** `mipsel-unknown-linux-gnu.2.22` (hard float, linked against the device's glibc), not the musl target, which is soft-float.
-  - Measured with symphonia on the R1: MP3 decodes at 16.5× real time hard-float vs 1.9× soft-float; M4A at 25× vs 3.4×.
-  - MIPS targets are Rust tier 3, so the build needs nightly and `-Zbuild-std`.
-  - Versions used: Rust nightly 1.101, zig 0.17, cargo-zigbuild 0.24 (2026-10-22).
-- **Opus:** symphonia 0.6.1 demuxes Ogg Opus but has no Opus decoder, so the player uses the pure-Rust `opus-decoder` crate. The Tonies files on the card are Opus.
-- **Album covers:** these are often 3000×3000 JPEGs, which would need 27 MB at full size. `jpeg-decoder` shrinks baseline JPEGs during decoding (DCT scaling), which `zune-jpeg` can't do.
+- **Stock kernel:** 4.4, whose panel (`lcd_lg35583`), touch (`cst8xx_touch`), PMIC (`axp2101`) and sound-card glue are closed vendor modules in `/module_driver`. Open GPL rewrites of them exist; `docs/kernel.md` lists them, with the mainline port that replaced this kernel, the boot chain and the references.
+- **Apps for the R1:** they have to link against the device's glibc 2.22 hard-float (for Rust, `mipsel-unknown-linux-gnu.2.22`), not musl, which is soft-float on MIPS: measured with symphonia on the R1, MP3 decodes at 16.5× real time hard-float vs 1.9× soft-float, M4A at 25× vs 3.4× (2026-10-22).
 
 ## Not yet verified
 
-- Pause when the headphones are unplugged, long-press next for the previous track, the power-button screen toggle, and fling scrolling have not been confirmed on the device.
 - Whether the hardware volume controls do anything.
 - Balanced output (port 3).
