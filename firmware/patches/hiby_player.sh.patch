@@ -1,0 +1,90 @@
+--- a/usr/bin/hiby_player.sh
++++ b/usr/bin/hiby_player.sh
+@@ -1,5 +1,21 @@
+ #!/bin/sh
++# Patched: first jumps into the mainline kernel on the SD card when it can
++# (r1-mainline.sh, which says when it doesn't); otherwise runs r1player
++# (/usr/data/r1player/r1player) in place of the stock player.
++# hiby_player stays on the device and takes over when:
++#   - a .stock file exists at the SD card root,
++#   - r1player is missing,
++#   - r1player fails (exits non-zero, crashes or panics): the R1 reboots
++#     into the stock player once, then back to r1player on the next boot.
++# r1player exiting 0, which it does on SIGTERM, relaunches it: `killall
++# r1player` after pushing a new binary deploys it. hiby_player exiting
++# reboots the R1, as in stock.
+ 
++R1=/usr/data/r1player/r1player
++LOG=/usr/data/r1player/r1player.log
++STOCK_ONCE=/usr/data/r1player/stock-once
++SD=/usr/data/mnt/sd_0
++
+ killall    hiby_player    &>/dev/null
+ killall -9 hiby_player    &>/dev/null
+ 
+@@ -9,7 +25,62 @@
+ /usr/bin/batd -v -s -t5 -o /mnt/sd_0/batlog.txt &
+ fi
+ 
+-#/usr/bin/hiby_player &>/dev/null
++# ADB without mass storage, so the card stays mounted here for r1player.
++# usb_storage_init.sh creates the gadget and adds adb (see the patch in it);
++# hiby_player rebinds the gadget with storage next to adb if it takes over.
++start_adb() {
++	/usr/bin/usb_storage_init.sh >/dev/null 2>&1
++	cd /sys/kernel/config/usb_gadget/android0 || return
++	echo 0x32bb > idVendor
++	echo 0x0101 > idProduct
++	echo 0x0100 > bcdDevice
++	echo 0x0200 > bcdUSB
++	echo HiBy > strings/0x409/manufacturer
++	echo R1 > strings/0x409/product
++	echo "HiBy R1" > strings/0x409/serialnumber
++	echo 500 > configs/c.1/MaxPower
++	echo 0x80 > configs/c.1/bmAttributes
++	echo adb > configs/c.1/strings/0x409/configuration
++	[ -z "$(cat UDC)" ] && ls /sys/class/udc/ > UDC
++	cd /
++}
++
++# Read-only: r1player only reads the card, and a hard power-off can't leave
++# it dirty. Mounted before start_adb, which checks for .noadb on it.
++mkdir -p $SD
++mount -o ro /dev/mmcblk0p1 $SD 2>/dev/null
++start_adb
++
++# Into the mainline kernel on the card, unless the stock player is wanted;
++# r1-mainline.sh returns only when it stays on stock.
++if [ ! -e $SD/.stock ] && [ ! -e $STOCK_ONCE ]; then
++	ML=/usr/data/r1player/mainline.log
++	[ -f $ML ] && mv $ML $ML.old
++	/usr/bin/r1-mainline.sh $SD > $ML 2>&1
++fi
++
++if [ -x $R1 ] && [ ! -e $SD/.stock ] && [ ! -e $STOCK_ONCE ]; then
++	[ -f $LOG ] && mv $LOG $LOG.old
++	while :; do
++		echo "$(date) starting r1player" >> $LOG
++		$R1 >> $LOG 2>&1
++		status=$?
++		echo "$(date) r1player exited with $status" >> $LOG
++		[ $status = 0 ] || break
++		sleep 1
++	done
++	# hiby_player's display driver (sa_hgl_dma) allocates 8 MB of contiguous
++	# memory when opened, which is gone once r1player has run (this kernel
++	# can't compact memory). Starting it now leaves it without a screen, so
++	# reboot and start it first thing instead.
++	touch $STOCK_ONCE
++	sync
++	reboot
++	exit
++fi
++
++rm -f $STOCK_ONCE
++umount $SD 2>/dev/null
+ /usr/bin/hiby_player
+ sleep 1
+-reboot
+\ No newline at end of file
++reboot

@@ -1,0 +1,22 @@
+--- a/usr/bin/usb_storage_init.sh
++++ b/usr/bin/usb_storage_init.sh
+@@ -30,5 +30,18 @@
+ 	mkdir /sys/kernel/config/usb_gadget/android0/functions/mass_storage.0
+ fi
+ 
+-exit 0
++# Added: expose adb next to mass storage. Skipped when /data/mnt/sd_0/.noadb
++# exists, or when adbd isn't ready within ~3s, so storage still binds alone.
++G=/sys/kernel/config/usb_gadget/android0
++if [ ! -e /data/mnt/sd_0/.noadb ] && [ ! -e $G/configs/c.1/ffs.adb ]; then
++	mkdir -p $G/functions/ffs.adb /dev/usb-ffs/adb
++	(pidof adbd >/dev/null || /sbin/adbserver.sh 440) </dev/null >/dev/null 2>&1 &
++	n=0
++	while [ ! -e /dev/usb-ffs/adb/ep1 ] && [ $n -lt 30 ]; do
++		usleep 100000
++		n=$((n + 1))
++	done
++	[ -e /dev/usb-ffs/adb/ep1 ] && ln -s $G/functions/ffs.adb $G/configs/c.1/ffs.adb
++fi
+ 
++exit 0
