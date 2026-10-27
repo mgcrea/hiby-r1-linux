@@ -61,6 +61,7 @@ which is the best reference for anything not listed here.
   - adb lists the R1 as `(no serial number) … model:Nexus_4`, and the shell runs as root.
   - The USB gadget's serial string is empty, which adb's libusb backend drops silently. Start the adb server with `ADB_LIBUSB=0`.
   - The R1's adbd predates `adb exec-out` (it fails with `error: closed`), and `adb shell` runs commands on a pty, which mangles binary output. Pull a file with `adb pull`, or stream bytes as `adb shell '... | gzip -1 | base64' | tr -d '\r' | base64 -d | gunzip` (about 3 s per MB). There's no `nc` on the device.
+  - A command left running on the R1 after `adb shell` returns needs a double fork: `(setsid sh -c '...' </dev/null >/dev/null 2>&1 &)`. A plain `setsid ... &` died with the shell (mainline, 2026-10-26).
 
 ## Decisions
 
