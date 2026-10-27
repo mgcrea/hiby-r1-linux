@@ -1,7 +1,7 @@
-From 6a966508544c193756d9bf106579a58105f7e239 Mon Sep 17 00:00:00 2001
+From 8858cca99a78a3085df29afd438b0ba3c4b2b597 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 20:33:27 +0000
-Subject: [PATCH 42/61] MIPS: ingenic: add the HiBy R1's Bluetooth
+Subject: [PATCH 42/62] MIPS: ingenic: add the HiBy R1's Bluetooth
 
 The AP6212 module's BCM43430A1 on UART0 with RTS/CTS, powered by PB4, at
 1.5 Mbaud.

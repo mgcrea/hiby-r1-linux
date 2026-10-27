@@ -1,7 +1,7 @@
-From 6ace7cb4804709cffb074692b6b47475bc273609 Mon Sep 17 00:00:00 2001
+From 2892e64da8a958941ce452692b669ac56b7befa6 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Thu, 22 Oct 2026 22:15:09 +0000
-Subject: [PATCH 01/61] MIPS: ingenic: add the X1600 and the HiBy R1 board
+Subject: [PATCH 01/62] MIPS: ingenic: add the X1600 and the HiBy R1 board
 
 The X1600 is an XBurst1 SoC close to the X1000 (same PRId company and
 core, 128 KiB L2 as reported by Config2). The HiBy R1 is a portable

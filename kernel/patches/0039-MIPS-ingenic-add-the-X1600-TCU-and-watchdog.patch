@@ -1,7 +1,7 @@
-From cc49220bf0847a9421bf993d85309fdfcfc1cfdf Mon Sep 17 00:00:00 2001
+From 444f9773c114b8373b09d0ed49a0baed53a04184 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 12:24:46 +0000
-Subject: [PATCH 39/61] MIPS: ingenic: add the X1600 TCU and watchdog
+Subject: [PATCH 39/62] MIPS: ingenic: add the X1600 TCU and watchdog
 
 The watchdog counts the TCU's RTC input, which on the X1600 is EXCLK / 512
 (46875 Hz), not the RTC crystal.

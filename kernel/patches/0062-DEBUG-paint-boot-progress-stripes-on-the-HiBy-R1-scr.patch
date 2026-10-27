@@ -1,7 +1,7 @@
-From 37b0aff47633164ef3a2673b52b025cb178ec3ff Mon Sep 17 00:00:00 2001
+From be9c6709ccaadeb4522bc4ac5602f83cdd1f35f5 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Thu, 22 Oct 2026 22:15:10 +0000
-Subject: [PATCH 61/61] DEBUG: paint boot progress stripes on the HiBy R1
+Subject: [PATCH 62/62] DEBUG: paint boot progress stripes on the HiBy R1
  screen
 
 Not for upstream: with no serial console, a stripe per milestone shows

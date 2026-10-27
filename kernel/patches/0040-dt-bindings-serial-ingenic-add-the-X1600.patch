@@ -1,7 +1,7 @@
-From c806ca1690b6e289ee6dcf90bdf2a5e69dc66693 Mon Sep 17 00:00:00 2001
+From acf4fe7be8a196d1a68bc587e2075bda17f3fb90 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 20:33:27 +0000
-Subject: [PATCH 40/61] dt-bindings: serial: ingenic: add the X1600
+Subject: [PATCH 40/62] dt-bindings: serial: ingenic: add the X1600
 
 The X1600's UARTs have the X1000's registers (as far as the stock kernel's
 use of them shows): take ingenic,x1600-uart with the X1000's as fallback.

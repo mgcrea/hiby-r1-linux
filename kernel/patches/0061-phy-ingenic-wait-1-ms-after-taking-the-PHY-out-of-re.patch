@@ -1,0 +1,51 @@
+From ff8198058c4d7902b633727ab541ab8f7e778c52 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Tue, 27 Oct 2026 15:32:59 +0000
+Subject: [PATCH 61/62] phy: ingenic: wait 1 ms after taking the PHY out of
+ reset
+
+ingenic_usb_phy_init() releases the PHY's power-on reset, then waits
+with usleep_range(300, 1000). On the HiBy R1 (X1600), dwc2's first core
+reset then hung at some starts after a watchdog restart: CSFTRST never
+cleared ("HANG! Soft Reset timeout GRSTCTL_CSFTRST"), the probe failed
+with -EBUSY, and every later reset in that start failed too. The
+failures came in runs lasting hours, and unrelated changes to the kernel
+made them more or less frequent: with CONFIG_MODULES and the board's
+Wi-Fi nodes added, 12 starts in 80 lost USB.
+
+Timestamps taken with ktime_get_ns() at the POR release and before the
+core reset, over those 80 starts, put the reset 468 to 508 us after the
+release in all 12 failed starts, and 511 us or more in all the good
+ones. The sleep usually lasts close to its 1 ms maximum, but ends after
+about 400 us when another timer, most likely the tick, expires within
+its range; dwc2 then takes about 80 us more before its reset. The
+X1600 programming manual gives no time to wait after the release, only
+that POR must be asserted for at least 10 us.
+
+Wait at least 1 ms, about twice the longest gap that failed. With
+usleep_range(1000, 2000), the same kernel kept USB in 80 starts of 80.
+---
+ drivers/phy/ingenic/phy-ingenic-usb.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/phy/ingenic/phy-ingenic-usb.c b/drivers/phy/ingenic/phy-ingenic-usb.c
+index 9759bad..3d79329 100644
+--- a/drivers/phy/ingenic/phy-ingenic-usb.c
++++ b/drivers/phy/ingenic/phy-ingenic-usb.c
+@@ -114,7 +114,12 @@ static int ingenic_usb_phy_init(struct phy *phy)
+ 	usleep_range(30, 300);
+ 	reg = readl(priv->base + REG_USBPCR_OFFSET);
+ 	writel(reg & ~USBPCR_POR, priv->base + REG_USBPCR_OFFSET);
+-	usleep_range(300, 1000);
++
++	/*
++	 * Give the PHY time to come out of reset: on the X1600, a core reset
++	 * less than about 0.5 ms after this hangs.
++	 */
++	usleep_range(1000, 2000);
+ 
+ 	return 0;
+ }
+-- 
+2.39.5
+

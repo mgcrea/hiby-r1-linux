@@ -1,7 +1,7 @@
-From 34b600079495849df84eaf9b8a52c661fcab4df6 Mon Sep 17 00:00:00 2001
+From 4f146415d1504b16b759e6383e67bbc7ab8a56e9 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 04:48:08 +0000
-Subject: [PATCH 46/61] clk: ingenic: x1600: take the USB PHY out of suspend
+Subject: [PATCH 46/62] clk: ingenic: x1600: take the USB PHY out of suspend
 
 Besides its clock gate (OPCR bit 23), the X1600's USB PHY has, as the
 X1000's, a suspend control in OPCR (SPENDN0). After a reset the PHY is

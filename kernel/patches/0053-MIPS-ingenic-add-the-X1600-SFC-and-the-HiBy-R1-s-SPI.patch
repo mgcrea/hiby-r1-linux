@@ -1,7 +1,7 @@
-From bfd8c87ff52b18d2336ead7fdc636fc95c35ff73 Mon Sep 17 00:00:00 2001
+From f73fdcbe70bd91917dff535798e91ec81f74f0a2 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 07:30:24 +0000
-Subject: [PATCH 53/61] MIPS: ingenic: add the X1600 SFC and the HiBy R1's
+Subject: [PATCH 53/62] MIPS: ingenic: add the X1600 SFC and the HiBy R1's
  SPI-NAND
 
 The R1's 128 MiB SPI-NAND with stock's partitions, all read-only for now,

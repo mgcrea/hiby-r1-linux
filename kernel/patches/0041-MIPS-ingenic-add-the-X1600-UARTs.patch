@@ -1,7 +1,7 @@
-From bff6daea7cc0f3e2a230d66a78a448c845f851b0 Mon Sep 17 00:00:00 2001
+From b7fd52875c41ef5e70bbbcc53f032a9bccbb537a Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 20:33:27 +0000
-Subject: [PATCH 41/61] MIPS: ingenic: add the X1600 UARTs
+Subject: [PATCH 41/62] MIPS: ingenic: add the X1600 UARTs
 
 Four UARTs at 0x10030000-0x10033000, interrupts 47 to 44, as in the HiBy R1's
 stock device tree, each with its CGU gate and the 24 MHz crystal as the baud

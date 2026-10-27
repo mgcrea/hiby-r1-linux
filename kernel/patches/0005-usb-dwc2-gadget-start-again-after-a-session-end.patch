@@ -1,7 +1,7 @@
-From 604f076c1bae01479f95f3290af57ee3d065f9d3 Mon Sep 17 00:00:00 2001
+From a2d148368d83558a900dcbb763d3ee4bc90603f4 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 08:31:40 +0000
-Subject: [PATCH 05/61] usb: dwc2: gadget: start again after a session end
+Subject: [PATCH 05/62] usb: dwc2: gadget: start again after a session end
 
 When the B-session goes invalid (Session End Detected, the cable pulled),
 the gadget is disconnected and left in L3. Nothing brings it back unless
