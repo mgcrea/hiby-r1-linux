@@ -1,6 +1,7 @@
 #!/bin/sh
-# Wi-Fi under mainline: the AP6212's BCM43430A1 on MSC0, through the card
-# kernel's brcmfmac (the flash kernel has none) and the stock wpa_supplicant
+# Wi-Fi under mainline: the AP6212's BCM43430A1 on MSC0, through brcmfmac
+# (built into the card kernel; the flash kernel's modules are on the card,
+# under its release, from flash-install.sh) and the stock wpa_supplicant
 # (from the system image), with busybox's udhcpc.
 #   r1-wifi on     power the chip up, start wpa_supplicant, then udhcpc
 #   r1-wifi off    stop both and power the chip down
@@ -17,6 +18,15 @@ MSC=/sys/bus/platform/drivers/jz4740-mmc
 
 case "$1" in
 on)
+	# Before MSC0 is bound, so that brcmfmac finds the chip when it comes,
+	# and finds brcmfmac-cyw (its vendor module) loaded when it attaches.
+	if [ ! -d /sys/module/brcmfmac ]; then
+		mods=$ML/modules/$(uname -r)
+		for m in cfg80211 brcmutil brcmfmac brcmfmac-cyw; do
+			[ -d /sys/module/$(echo $m | tr - _) ] && continue
+			insmod $mods/$m.ko || { echo "can't load $mods/$m.ko"; exit 1; }
+		done
+	fi
 	if [ ! -e $MSC/13450000.mmc ]; then
 		echo 13450000.mmc > $MSC/bind
 		i=0

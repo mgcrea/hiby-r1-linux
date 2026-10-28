@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Write the mainline flash kernel (out/r1-linux.uimage) into the R1's
-# `kernel` slot (mtd1), over ADB, from mainline or from the stock system.
+# `kernel` slot (mtd1), over ADB, from mainline or from the stock system,
+# and put its Wi-Fi modules (out/flash-modules) on the card, where r1-wifi
+# loads them from.
 # The stock SPL then boots it at every start; its r1-loader hands over to
 # the kernel on the card (/.r1-mainline/r1-linux.bin) by kexec, and falls
 # back to itself when that one failed to come up. Run it only with the
@@ -19,6 +21,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 export ADB_LIBUSB=0
 img="$here/../out/r1-linux.uimage"
+mods=$(ls -d "$here"/../out/flash-modules/*/ 2>/dev/null | head -1)
 flasher="$here/../out/r1flash"
 dry=0
 [ "${1:-}" = --dry-run ] && dry=1
@@ -28,6 +31,8 @@ size=$(wc -c < "$img" | tr -d " ")
 [ "$size" -le 5242880 ] || { echo "the image is $size bytes, over the 5 MiB slot"; exit 1; }
 [ "$(head -c 4 "$img" | od -An -tx1 | tr -d ' \n')" = 27051956 ] || { echo "not a uImage"; exit 1; }
 md5=$(md5 -q "$img" 2>/dev/null || md5sum "$img" | cut -d' ' -f1)
+[ -n "$mods" ] || { echo "no out/flash-modules: run build.sh"; exit 1; }
+release=$(basename "$mods")
 
 # Its stdin from /dev/null: adb shell would otherwise eat the confirmation.
 r1() { adb shell "$1" < /dev/null | tr -d '\r'; }
@@ -66,6 +71,18 @@ else
 fi
 [ "$(r1 "md5sum $src | cut -d' ' -f1")" = "$md5" ] || { echo "the copy on the R1 differs"; exit 1; }
 
+# The modules before the slot, so that a written kernel has them. Only this
+# build's: they load into no other.
+if [ $dry = 0 ]; then
+	r1 "rm -rf $dir/modules && mkdir -p $dir/modules/$release"
+	for m in "$mods"*.ko; do
+		adb push "$m" "$dir/modules/$release/" >/dev/null
+		sum=$(md5 -q "$m" 2>/dev/null || md5sum "$m" | cut -d' ' -f1)
+		[ "$(r1 "md5sum $dir/modules/$release/$(basename "$m") | cut -d' ' -f1")" = "$sum" ] ||
+			{ echo "$(basename "$m") on the card differs"; exit 1; }
+	done
+	echo "modules on the card: $dir/modules/$release"
+fi
 if [ $dry = 1 ]; then
 	[ $system = mainline ] && r1 "rm -f $src /tmp/r1flash"
 	echo "dry run: stopping before the erase"

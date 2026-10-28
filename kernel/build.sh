@@ -5,7 +5,8 @@
 #                       the two kernels: out/r1-linux.uimage, the flash
 #                       kernel (r1.config), xz-compressed as a
 #                       self-decompressing uImage for the R1's kernel slot,
-#                       which the stock boot loader loads; and
+#                       which the stock boot loader loads, with its
+#                       Wi-Fi modules in out/flash-modules; and
 #                       out/r1-linux.bin, the card kernel (r1.config and
 #                       r1-card.config: Wi-Fi), vmlinux.bin with the DTB,
 #                       which the flash kernel kexecs (and r1jump can load),
@@ -104,7 +105,7 @@ docker run --rm -v r1-linux:/src -v "$here:/r1" r1-mainline sh -euc '
   mipsel-linux-gnu-gcc -static -nostdlib -ffreestanding -mno-abicalls -fno-pic -no-pie -Os -Wall -Wl,--build-id=none -o $FLASH/r1kexec /r1/initramfs/r1kexec.c
   # The flash writer flash-install.sh pushes to /tmp (not in the image).
   mipsel-linux-gnu-gcc -static -Os -Wall -o /r1/out/r1flash /r1/tools/r1flash.c
-  build vmlinux.bin vmlinuz.bin dtbs
+  build vmlinux.bin vmlinuz.bin dtbs modules
   check_dtb
 
   # The flash image: the decompressor (vmlinuz) with the DTB after it, where
@@ -112,15 +113,7 @@ docker run --rm -v r1-linux:/src -v "$here:/r1" r1-mainline sh -euc '
   # be checked here) and moves it behind the kernel it unpacks, in a legacy
   # uImage header: the stock SPL loads it by the header (load address,
   # entry, size; it checks no CRC) into memory and jumps to it.
-  # Its device tree has no Wi-Fi: with it (MSC0 and its mmc-pwrseq), some
-  # starts after a restart had no USB, the dwc2 core reset timing out until
-  # a power-off (1 in 22 for this morning flash kernel plus the Wi-Fi
-  # nodes); without, 0 in 97 over three flash kernels (2026-10-25,
-  # docs/kernel.md, "USB lost at some starts").
-  dtbf=$O/hiby-r1-flash.dtb
-  cp $O/arch/mips/boot/dts/ingenic/hiby-r1.dtb $dtbf
-  fdtput -t s $dtbf /mmc@13450000 status disabled
-  fdtput -t s $dtbf /pwrseq-wlan status disabled
+  dtbf=$O/arch/mips/boot/dts/ingenic/hiby-r1.dtb
   z=$O/vmlinuz
   zload=$(mipsel-linux-gnu-readelf -l $z | awk "/LOAD/ {print \$3; exit}")
   zentry=$(mipsel-linux-gnu-readelf -h $z | awk "/Entry point/ {print \$4}")
@@ -134,6 +127,17 @@ docker run --rm -v r1-linux:/src -v "$here:/r1" r1-mainline sh -euc '
   size=$(stat -c %s /r1/out/r1-linux.uimage)
   [ $size -le 5242880 ] || { echo "out/r1-linux.uimage: $size bytes, over the 5 MiB kernel slot"; exit 1; }
   echo "out/r1-linux.uimage: $size bytes of 5242880, load $zload, entry $zentry"
+  # Its Wi-Fi modules, in the order r1-wifi loads them: they load only
+  # into this build (TRIM_UNUSED_KSYMS), so flash-install.sh puts them on
+  # the card under its release. brcmfmac asks for its vendor module
+  # (brcmfmac-cyw for the BCM43430) when it attaches, and finds it loaded.
+  release=$(cat $O/include/config/kernel.release)
+  rm -rf /r1/out/flash-modules
+  mkdir -p /r1/out/flash-modules/$release
+  for m in net/wireless/cfg80211 drivers/net/wireless/broadcom/brcm80211/brcmutil/brcmutil drivers/net/wireless/broadcom/brcm80211/brcmfmac/brcmfmac drivers/net/wireless/broadcom/brcm80211/brcmfmac/cyw/brcmfmac-cyw; do
+    mipsel-linux-gnu-strip --strip-debug -o /r1/out/flash-modules/$release/${m##*/}.ko $O/$m.ko
+  done
+  echo "out/flash-modules/$release: $(du -sk /r1/out/flash-modules/$release | cut -f1) KB"
 
   # The card kernel, which the flash one kexecs: vmlinux.bin with the DTB.
   configure $CARD /r1/r1.config /r1/r1-card.config
