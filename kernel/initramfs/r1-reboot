@@ -4,6 +4,7 @@
 sync
 # A driver whose shutdown hangs stops the restart (brcmfmac on a broken SDIO
 # bus did, 2026-10-25): then the watchdog resets the R1, which a restart
-# leaves running, once init's daemon stops feeding it.
-( sleep 15; killall watchdog ) &
+# leaves running, once init's daemon stops feeding it. SIGKILL, not SIGTERM:
+# busybox watchdog answers SIGTERM by writing the magic V, which stops the timer.
+( sleep 15; killall -9 watchdog ) &
 exec reboot -f
