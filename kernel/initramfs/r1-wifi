@@ -5,28 +5,38 @@
 # (from the system image), with busybox's udhcpc.
 #   r1-wifi on     power the chip up, start wpa_supplicant, then udhcpc
 #   r1-wifi off    stop both and power the chip down
+#   r1-wifi load   only load the modules (r1-share, before the card goes)
 # The networks are /.r1-mainline/wifi.conf on the card (wpa_supplicant's
-# format), copied to RAM: the card may go to a computer meanwhile.
+# format), copied to RAM: the card may go to a computer meanwhile. While it
+# is with the computer, r1-share's copy ($SHARED) stands in for it.
 ML=/mnt/sd_0/.r1-mainline
 CONF=/tmp/wpa_supplicant.conf
 CTRL=/tmp/wpa
+SHARED=/tmp/wifi.conf.shared
 # MSC0, whose removal powers the chip down (its mmc-pwrseq holds WL_REG_ON
 # low) and takes brcmfmac off it: off leaves it unbound, so the next on
 # starts the chip afresh. A chip still running its firmware from before
 # connected to nothing.
 MSC=/sys/bus/platform/drivers/jz4740-mmc
 
+# The flash kernel's modules (the card kernel has them built in). Before
+# MSC0 is bound, so that brcmfmac finds the chip when it comes, and finds
+# brcmfmac-cyw (its vendor module) loaded when it attaches.
+load() {
+	[ -d /sys/module/brcmfmac ] && return 0
+	mods=$ML/modules/$(uname -r)
+	for m in cfg80211 brcmutil brcmfmac brcmfmac-cyw; do
+		[ -d /sys/module/$(echo $m | tr - _) ] && continue
+		insmod $mods/$m.ko || { echo "can't load $mods/$m.ko"; return 1; }
+	done
+}
+
 case "$1" in
+load)
+	load || exit 1
+	;;
 on)
-	# Before MSC0 is bound, so that brcmfmac finds the chip when it comes,
-	# and finds brcmfmac-cyw (its vendor module) loaded when it attaches.
-	if [ ! -d /sys/module/brcmfmac ]; then
-		mods=$ML/modules/$(uname -r)
-		for m in cfg80211 brcmutil brcmfmac brcmfmac-cyw; do
-			[ -d /sys/module/$(echo $m | tr - _) ] && continue
-			insmod $mods/$m.ko || { echo "can't load $mods/$m.ko"; exit 1; }
-		done
-	fi
+	load || exit 1
 	if [ ! -e $MSC/13450000.mmc ]; then
 		echo 13450000.mmc > $MSC/bind
 		i=0
@@ -36,8 +46,10 @@ on)
 	while [ ! -e /sys/class/net/wlan0 ] && [ $i -lt 100 ]; do usleep 100000; i=$((i + 1)); done
 	[ -e /sys/class/net/wlan0 ] || { echo "no wlan0"; exit 1; }
 	command -v wpa_supplicant > /dev/null || { echo "no wpa_supplicant"; exit 1; }
-	if [ -f $ML/wifi.conf ]; then
-		cp $ML/wifi.conf $CONF
+	conf=$ML/wifi.conf
+	[ -e /tmp/sd-shared ] && conf=$SHARED
+	if [ -f $conf ]; then
+		cp $conf $CONF
 	else
 		printf "ctrl_interface=%s\nupdate_config=1\n" $CTRL > $CONF
 	fi
@@ -63,7 +75,7 @@ off)
 	echo "Wi-Fi off"
 	;;
 *)
-	echo "usage: r1-wifi on|off"
+	echo "usage: r1-wifi on|off|load"
 	exit 2
 	;;
 esac

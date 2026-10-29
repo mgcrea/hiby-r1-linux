@@ -20,6 +20,10 @@ vbus() { cat /sys/class/power_supply/axp20x-usb/online 2>/dev/null; }
 back() { mount -t exfat -o ro $DEV $SD || { echo "the card didn't mount"; rm -f /tmp/sd-shared; exit 3; }; rm -f /tmp/sd-shared; }
 
 [ "$(udc)" = configured ] || { echo "no computer"; exit 1; }
+# Wi-Fi's modules and networks are on the card (r1-wifi): load the first and
+# copy the second, so that Wi-Fi can still come on while the computer has it.
+/sbin/r1-wifi load > /dev/null
+cp $SD/.r1-mainline/wifi.conf /tmp/wifi.conf.shared 2>/dev/null || rm -f /tmp/wifi.conf.shared
 sync
 # r1player has just let go of the track it played and stopped reading: give
 # them a moment.
