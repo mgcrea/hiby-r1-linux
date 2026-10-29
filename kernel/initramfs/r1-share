@@ -17,6 +17,13 @@ udc() { cat /sys/class/udc/*/state 2>/dev/null; }
 # USB power, from the PMIC: gone at once when the cable comes out, while the
 # controller can stay `configured` until the next plug-in (seen 2026-10-25).
 vbus() { cat /sys/class/power_supply/axp20x-usb/online 2>/dev/null; }
+# What holds the card, as PID:name (busybox here has no fuser).
+holders() {
+	for p in /proc/[0-9]*; do
+		{ ls -l $p/fd; ls -ld $p/cwd; } 2>/dev/null | grep -q -e "-> $SD/" -e "-> $SD\$" &&
+			echo "${p#/proc/}:$(cat $p/comm)"
+	done
+}
 back() { mount -t exfat -o ro $DEV $SD || { echo "the card didn't mount"; rm -f /tmp/sd-shared; exit 3; }; rm -f /tmp/sd-shared; }
 
 [ "$(udc)" = configured ] || { echo "no computer"; exit 1; }
@@ -30,7 +37,7 @@ sync
 i=0
 until umount $SD 2>/dev/null; do
 	i=$((i + 1))
-	[ $i -lt 10 ] || { echo "busy: $(fuser -m $SD 2>/dev/null)"; exit 2; }
+	[ $i -lt 10 ] || { echo "busy:" $(holders); exit 2; }
 	usleep 300000
 done
 touch /tmp/sd-shared
