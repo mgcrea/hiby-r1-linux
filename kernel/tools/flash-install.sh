@@ -4,10 +4,10 @@
 # and put its Wi-Fi modules (out/flash-modules) on the card, where r1-wifi
 # loads them from.
 # The stock SPL then boots it at every start; its r1-loader hands over to
-# the kernel on the card (/.r1-mainline/r1-linux.bin) by kexec, and falls
-# back to itself when that one failed to come up. Run it only with the
-# user's go: it replaces the kernel the R1 boots (docs/kernel.md,
-# "Replacing stock in flash").
+# a kernel on the card (/.r1-mainline/r1-linux.bin), if there is one, by
+# kexec, and falls back to itself when that one failed to come up.
+# Run it only with the user's go: it replaces the kernel the R1 boots
+# (docs/kernel.md, "Replacing stock in flash").
 #
 #   tools/flash-install.sh [--dry-run]
 #
