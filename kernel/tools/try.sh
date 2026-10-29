@@ -8,6 +8,8 @@
 #
 # R1_WHO is this session's name in tools/r1lock.sh, whose lock it must hold
 # or find free. CMD runs on the R1 afterwards (e.g. '/sbin/r1-wifi on').
+# The card kernel stays on the card: card-install.sh --remove takes it off,
+# back to the flash kernel alone (the normal setup).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 export ADB_LIBUSB=0
