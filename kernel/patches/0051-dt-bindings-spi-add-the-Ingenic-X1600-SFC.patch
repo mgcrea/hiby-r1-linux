@@ -1,4 +1,4 @@
-From 065c24e0a12385e93c78e18a4a7ee96c3cfa777c Mon Sep 17 00:00:00 2001
+From 9cbde177395c2b3f718e7dda4b27e309d0f8c204 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 07:30:24 +0000
 Subject: [PATCH 51/62] dt-bindings: spi: add the Ingenic X1600 SFC

@@ -1,4 +1,4 @@
-From ef88c62a586e9e7bb0eab175963be2eb7b566d44 Mon Sep 17 00:00:00 2001
+From 1eb3a9b6cabfd02275cf18ddab6024bd5a2b7429 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 12:24:45 +0000
 Subject: [PATCH 38/62] dt-bindings: timer: ingenic,tcu: add the X1600

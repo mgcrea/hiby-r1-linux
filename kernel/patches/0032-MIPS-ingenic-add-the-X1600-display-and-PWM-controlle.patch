@@ -1,8 +1,8 @@
-From 43408f877a1197368f11be1fcfefd49f283e0fb8 Mon Sep 17 00:00:00 2001
+From 5d19e970090c3dea21ff784af1a27be130aa6c62 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:00:55 +0000
-Subject: [PATCH 32/62] MIPS: ingenic: add the X1600 LCD and PWM controllers
- and the HiBy R1's display
+Subject: [PATCH 32/62] MIPS: ingenic: add the X1600 display and PWM
+ controllers and the HiBy R1's display
 
 Describe the X1600's LCD and PWM controllers, and drive the HiBy R1's screen
 with them: the LG35583 panel on the LCD controller, set up over a bit-banged
@@ -13,8 +13,8 @@ The simple framebuffer stays, for the console until the display driver takes
 the screen over.
 ---
  arch/mips/boot/dts/ingenic/hiby-r1.dts | 90 ++++++++++++++++++++++----
- arch/mips/boot/dts/ingenic/x1600.dtsi  | 24 +++++++
- 2 files changed, 102 insertions(+), 12 deletions(-)
+ arch/mips/boot/dts/ingenic/x1600.dtsi  | 23 +++++++
+ 2 files changed, 101 insertions(+), 12 deletions(-)
 
 diff --git a/arch/mips/boot/dts/ingenic/hiby-r1.dts b/arch/mips/boot/dts/ingenic/hiby-r1.dts
 index 765007d..c63101c 100644
@@ -154,22 +154,21 @@ index 765007d..c63101c 100644
  		function = "mmc1";
  		groups = "mmc1-1bit", "mmc1-4bit";
 diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
-index 81ab235..4fb0df1 100644
+index 81ab235..bc9b35e 100644
 --- a/arch/mips/boot/dts/ingenic/x1600.dtsi
 +++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
-@@ -208,6 +208,19 @@ ost: timer@12000000 {
+@@ -208,6 +208,18 @@ ost: timer@12000000 {
  		interrupts = <4>;
  	};
  
 +	lcd: lcd-controller@13050000 {
-+		compatible = "ingenic,x1600-lcd";
++		compatible = "ingenic,x1600-dpu";
 +		reg = <0x13050000 0x10000>;
 +
 +		interrupt-parent = <&intc>;
 +		interrupts = <31>;
 +
 +		clocks = <&cgu X1600_CLK_LCD>;
-+		clock-names = "lcd";
 +
 +		status = "disabled";
 +	};
@@ -177,7 +176,7 @@ index 81ab235..4fb0df1 100644
  	pdma: dma-controller@13420000 {
  		compatible = "ingenic,x1600-dma", "ingenic,x1830-dma";
  		reg = <0x13420000 0x400>, <0x13421000 0x40>;
-@@ -246,6 +259,17 @@ mmc1: mmc@13460000 {
+@@ -246,6 +258,17 @@ mmc1: mmc@13460000 {
  		status = "disabled";
  	};
  

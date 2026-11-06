@@ -1,4 +1,4 @@
-From 74082590f07c576eb07aa91b7ffe98278073732d Mon Sep 17 00:00:00 2001
+From 507965f9dd076d9914f08f14afc4e0138843bfd6 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sun, 25 Oct 2026 10:21:25 +0000
 Subject: [PATCH 59/62] mmc: jz4740: keep the clock running on a host with SDIO

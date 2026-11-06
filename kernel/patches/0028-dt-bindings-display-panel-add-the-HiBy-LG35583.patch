@@ -1,4 +1,4 @@
-From ba7793c8cfd6fbb3eb4897e1d296f9fc050d55d8 Mon Sep 17 00:00:00 2001
+From 62f08f697dd9edcae6c98ea61b4365f6163505f5 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:05:52 +0000
 Subject: [PATCH 28/62] dt-bindings: display: panel: add the HiBy LG35583
@@ -6,16 +6,16 @@ Subject: [PATCH 28/62] dt-bindings: display: panel: add the HiBy LG35583
 The 480x800 parallel RGB panel of the HiBy R1, set up over a 3-wire SPI
 bus with 16-bit words.
 ---
- .../bindings/display/panel/hiby,lg35583.yaml  | 71 +++++++++++++++++++
- 1 file changed, 71 insertions(+)
+ .../bindings/display/panel/hiby,lg35583.yaml  | 67 +++++++++++++++++++
+ 1 file changed, 67 insertions(+)
  create mode 100644 Documentation/devicetree/bindings/display/panel/hiby,lg35583.yaml
 
 diff --git a/Documentation/devicetree/bindings/display/panel/hiby,lg35583.yaml b/Documentation/devicetree/bindings/display/panel/hiby,lg35583.yaml
 new file mode 100644
-index 0000000..1949891
+index 0000000..efdaf62
 --- /dev/null
 +++ b/Documentation/devicetree/bindings/display/panel/hiby,lg35583.yaml
-@@ -0,0 +1,71 @@
+@@ -0,0 +1,67 @@
 +# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 +%YAML 1.2
 +---
@@ -48,10 +48,6 @@ index 0000000..1949891
 +  vccio-supply:
 +    description: I/O power supply
 +
-+  reset-gpios: true
-+  backlight: true
-+  port: true
-+
 +required:
 +  - compatible
 +  - reg
@@ -82,7 +78,7 @@ index 0000000..1949891
 +
 +            port {
 +                panel_in: endpoint {
-+                    remote-endpoint = <&lcd_out>;
++                    remote-endpoint = <&dpu_out>;
 +                };
 +            };
 +        };

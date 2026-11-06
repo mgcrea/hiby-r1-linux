@@ -1,4 +1,4 @@
-From 71c0507bae5aa437e86dea4b2c0e471c9d52ec02 Mon Sep 17 00:00:00 2001
+From 88f4f498e02914599fdb92d49ce81f24fed8ea64 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 04:48:08 +0000
 Subject: [PATCH 48/62] phy: ingenic: add the X1600

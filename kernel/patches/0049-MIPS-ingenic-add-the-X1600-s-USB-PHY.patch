@@ -1,4 +1,4 @@
-From acf36e8d3bb079a9bf60e17b88b645d669dff9e4 Mon Sep 17 00:00:00 2001
+From bf10c3fe800555e732c587cd7a2b54b5fe6d68e1 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 04:48:08 +0000
 Subject: [PATCH 49/62] MIPS: ingenic: add the X1600's USB PHY
@@ -26,7 +26,7 @@ index d1426b5..7af7c83 100644
  	status = "okay";
  
 diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
-index 10fffcc..9913dd1 100644
+index c7251b7..8c1e9da 100644
 --- a/arch/mips/boot/dts/ingenic/x1600.dtsi
 +++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
 @@ -56,13 +56,27 @@ osc32k: osc32k {
@@ -58,7 +58,7 @@ index 10fffcc..9913dd1 100644
  	};
  
  	pinctrl: pin-controller@10010000 {
-@@ -361,6 +375,9 @@ otg: usb@13500000 {
+@@ -360,6 +374,9 @@ otg: usb@13500000 {
  		clocks = <&cgu X1600_CLK_OTG>;
  		clock-names = "otg";
  

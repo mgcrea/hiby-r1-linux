@@ -1,4 +1,4 @@
-From 18e1be95134c1f410a6626ea220b68e9ee033deb Mon Sep 17 00:00:00 2001
+From 26a315b68f4f36670ea4fab1f0854a7d01e86964 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 12:50:03 +0000
 Subject: [PATCH 36/62] clk: ingenic: tcu: keep the divider of a running

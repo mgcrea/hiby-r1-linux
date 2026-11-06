@@ -1,4 +1,4 @@
-From d27e87f8e95a59f3f783cab30119cb5e8ace4d30 Mon Sep 17 00:00:00 2001
+From 90b25cc67f73fdca4fa74f57ea4b436247d0a1a6 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 11:18:15 +0000
 Subject: [PATCH 33/62] ASoC: cs43130: mute the PCM path from hw_free to

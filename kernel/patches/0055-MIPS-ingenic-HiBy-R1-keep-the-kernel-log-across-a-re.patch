@@ -1,4 +1,4 @@
-From f091c206ac0f7d521f4ee45feceb68e1480b9f7c Mon Sep 17 00:00:00 2001
+From e15eddcae235a3292c0b8eaac031494884f751dd Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sun, 25 Oct 2026 07:34:24 +0000
 Subject: [PATCH 55/62] MIPS: ingenic: HiBy R1: keep the kernel log across a

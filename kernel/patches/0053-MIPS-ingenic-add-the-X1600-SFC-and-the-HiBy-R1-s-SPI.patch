@@ -1,4 +1,4 @@
-From f73fdcbe70bd91917dff535798e91ec81f74f0a2 Mon Sep 17 00:00:00 2001
+From 4dddf87c267e7a27e2db4a50eb75d9c9290793ca Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 07:30:24 +0000
 Subject: [PATCH 53/62] MIPS: ingenic: add the X1600 SFC and the HiBy R1's
@@ -102,10 +102,10 @@ index 7af7c83..f94ad91 100644
  	status = "okay";
  };
 diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
-index 9913dd1..c051a5b 100644
+index 8c1e9da..04b5bda 100644
 --- a/arch/mips/boot/dts/ingenic/x1600.dtsi
 +++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
-@@ -328,6 +328,21 @@ pdma: dma-controller@13420000 {
+@@ -327,6 +327,21 @@ pdma: dma-controller@13420000 {
  		clocks = <&cgu X1600_CLK_PDMA>;
  	};
  

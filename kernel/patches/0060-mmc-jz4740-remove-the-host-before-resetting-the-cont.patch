@@ -1,4 +1,4 @@
-From 3e7594c5561555e598daac378cdc98e5c1a5fc10 Mon Sep 17 00:00:00 2001
+From a5e559ba0713fc01bb77ebd2e6a9fc34154f741c Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sun, 25 Oct 2026 23:00:04 +0000
 Subject: [PATCH 60/62] mmc: jz4740: remove the host before resetting the

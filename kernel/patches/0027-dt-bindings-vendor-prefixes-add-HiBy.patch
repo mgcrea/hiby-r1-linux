@@ -1,4 +1,4 @@
-From 447c0678bb5c6675f8a790f9b8cb25508305b9d2 Mon Sep 17 00:00:00 2001
+From b60f8f6f300c3cf2d5e9def23870399e70cd268c Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:05:52 +0000
 Subject: [PATCH 27/62] dt-bindings: vendor-prefixes: add HiBy

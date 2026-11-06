@@ -1,4 +1,4 @@
-From a6f8482835da5395155ad7670683370e877975f5 Mon Sep 17 00:00:00 2001
+From 147a40b0927dd07bcb04c8b0bfa625d2f21c3336 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 20:38:50 +0000
 Subject: [PATCH 43/62] serial: 8250_ingenic: set UMR and UACR at probe

@@ -1,4 +1,4 @@
-From acf4fe7be8a196d1a68bc587e2075bda17f3fb90 Mon Sep 17 00:00:00 2001
+From 18e24f7b4279e74bb08a8e3fd446c76b0a30e483 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 20:33:27 +0000
 Subject: [PATCH 40/62] dt-bindings: serial: ingenic: add the X1600

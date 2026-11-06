@@ -1,4 +1,4 @@
-From 444f9773c114b8373b09d0ed49a0baed53a04184 Mon Sep 17 00:00:00 2001
+From 8796d6a612a9cc80ddbbe3507e2d90d4ae1600d5 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 12:24:46 +0000
 Subject: [PATCH 39/62] MIPS: ingenic: add the X1600 TCU and watchdog
@@ -10,7 +10,7 @@ The watchdog counts the TCU's RTC input, which on the X1600 is EXCLK / 512
  1 file changed, 29 insertions(+)
 
 diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
-index 4fb0df1..be939ba 100644
+index bc9b35e..f5e4ddc 100644
 --- a/arch/mips/boot/dts/ingenic/x1600.dtsi
 +++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
 @@ -5,6 +5,7 @@
@@ -54,7 +54,7 @@ index 4fb0df1..be939ba 100644
 +	};
 +
  	lcd: lcd-controller@13050000 {
- 		compatible = "ingenic,x1600-lcd";
+ 		compatible = "ingenic,x1600-dpu";
  		reg = <0x13050000 0x10000>;
 -- 
 2.39.5

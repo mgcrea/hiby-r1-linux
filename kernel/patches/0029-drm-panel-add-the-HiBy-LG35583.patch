@@ -1,4 +1,4 @@
-From 3029326eda284794b22a56c30cc7549c60930f8b Mon Sep 17 00:00:00 2001
+From e0f5ff853b050bf0dcba49fd501207dfa4971ee0 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:05:52 +0000
 Subject: [PATCH 29/62] drm/panel: add the HiBy LG35583
@@ -49,7 +49,7 @@ index 3b523cf..4eb41bf 100644
  obj-$(CONFIG_DRM_PANEL_HIMAX_HX83112A) += panel-himax-hx83112a.o
 diff --git a/drivers/gpu/drm/panel/panel-hiby-lg35583.c b/drivers/gpu/drm/panel/panel-hiby-lg35583.c
 new file mode 100644
-index 0000000..47aba09
+index 0000000..9189c7c
 --- /dev/null
 +++ b/drivers/gpu/drm/panel/panel-hiby-lg35583.c
 @@ -0,0 +1,342 @@
@@ -284,8 +284,8 @@ index 0000000..47aba09
 +	usleep_range(5000, 6000);
 +
 +	gpiod_set_value_cansleep(ctx->reset, 1);
-+	regulator_disable(ctx->vccio);
 +	regulator_disable(ctx->vcc);
++	regulator_disable(ctx->vccio);
 +	return 0;
 +}
 +

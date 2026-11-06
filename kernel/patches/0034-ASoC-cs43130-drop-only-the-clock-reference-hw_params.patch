@@ -1,4 +1,4 @@
-From c876972221e945e1cac3ce100ab37091f111646e Mon Sep 17 00:00:00 2001
+From 33d67eec82f0048f8e3da2bffe5d238a84c03b8e Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 11:34:38 +0000
 Subject: [PATCH 34/62] ASoC: cs43130: drop only the clock reference hw_params

@@ -1,4 +1,4 @@
-From b7fd52875c41ef5e70bbbcc53f032a9bccbb537a Mon Sep 17 00:00:00 2001
+From 3fcddc0f14df6c68fbe55d40a48034be970f0bac Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 20:33:27 +0000
 Subject: [PATCH 41/62] MIPS: ingenic: add the X1600 UARTs
@@ -11,7 +11,7 @@ clock.
  1 file changed, 52 insertions(+)
 
 diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
-index be939ba..10fffcc 100644
+index f5e4ddc..c7251b7 100644
 --- a/arch/mips/boot/dts/ingenic/x1600.dtsi
 +++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
 @@ -132,6 +132,58 @@ gpd: gpio@3 {
