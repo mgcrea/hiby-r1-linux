@@ -1,4 +1,4 @@
-From 2fdd9907c983764a463bed83fe8b91d3b116248e Mon Sep 17 00:00:00 2001
+From c919f1ec08610da3821a8da5d01f99e9f5eab53b Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 05:06:37 +0000
 Subject: [PATCH 50/62] phy: ingenic: don't disable the supply in exit

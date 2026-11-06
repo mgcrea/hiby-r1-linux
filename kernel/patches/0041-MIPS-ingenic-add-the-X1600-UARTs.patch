@@ -1,4 +1,4 @@
-From 3fcddc0f14df6c68fbe55d40a48034be970f0bac Mon Sep 17 00:00:00 2001
+From a35737d52f28af044ddc450a2f70a9a45721b2fa Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 20:33:27 +0000
 Subject: [PATCH 41/62] MIPS: ingenic: add the X1600 UARTs

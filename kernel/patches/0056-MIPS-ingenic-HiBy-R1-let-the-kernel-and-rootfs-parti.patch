@@ -1,4 +1,4 @@
-From 1fb3657f3fedd7d6d3dff5c578720cc68caf2a19 Mon Sep 17 00:00:00 2001
+From 165d93bb4d6597c4a493a8fab99d1edc226be9b9 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sun, 25 Oct 2026 08:16:14 +0000
 Subject: [PATCH 56/62] MIPS: ingenic: HiBy R1: let the kernel and rootfs

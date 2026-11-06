@@ -1,4 +1,4 @@
-From a67d07418b859f10d9fcebcaca302d6c678b1d58 Mon Sep 17 00:00:00 2001
+From c7a14d270307401fbbcf268119df555001d2df53 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 04:01:44 +0000
 Subject: [PATCH 44/62] pinctrl: ingenic: add the X1600's 32 kHz clock output

@@ -1,4 +1,4 @@
-From 13788e1393d8a2cebd277721b2991c3695894fdf Mon Sep 17 00:00:00 2001
+From 1f66dbf23979cf81c3ec4a8f11cec5d8c0e4bd90 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 07:30:24 +0000
 Subject: [PATCH 52/62] spi: add a driver for the Ingenic X1600 SFC

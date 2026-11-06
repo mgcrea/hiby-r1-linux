@@ -1,4 +1,4 @@
-From 9d693b6270d5803ce29fc614696285da17fb5eba Mon Sep 17 00:00:00 2001
+From 0ce00873c77d87e80cb47c9aa1758fc19f6e01a2 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sun, 25 Oct 2026 09:24:45 +0000
 Subject: [PATCH 57/62] MIPS: ingenic: HiBy R1: add the Wi-Fi chip

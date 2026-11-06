@@ -1,4 +1,4 @@
-From 93b59599ed3e533469cc67d39af77280a810a316 Mon Sep 17 00:00:00 2001
+From 90a4cd86b9012c899b7227210338ed7369c888f5 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Thu, 22 Oct 2026 22:15:10 +0000
 Subject: [PATCH 62/62] DEBUG: paint boot progress stripes on the HiBy R1

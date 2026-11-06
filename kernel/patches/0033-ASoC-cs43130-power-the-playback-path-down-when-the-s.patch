@@ -1,0 +1,40 @@
+From 08376b77978c82d2a3b9aaa45cf1c3df11de3e69 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Fri, 23 Oct 2026 11:18:15 +0000
+Subject: [PATCH 33/62] ASoC: cs43130: power the playback path down when the
+ stream closes
+
+With use_pmdown_time set, DAPM keeps the playback path powered and
+unmuted for pmdown_time after a stream closes, and the DAC plays
+whatever its serial port carries meanwhile: on the HiBy R1 (CS43131 on
+an Ingenic X1600 I2S controller), white noise once a stream stops. Drop
+it from both component drivers, so that the path powers down as the
+stream closes. Charles Keepax suggested this instead of a mute_stream()
+op, which also left a faint pop at every pause.
+---
+ sound/soc/codecs/cs43130.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/sound/soc/codecs/cs43130.c b/sound/soc/codecs/cs43130.c
+index e3571ea..ac0faa0 100644
+--- a/sound/soc/codecs/cs43130.c
++++ b/sound/soc/codecs/cs43130.c
+@@ -2449,7 +2449,6 @@ static const struct snd_soc_component_driver soc_component_dev_cs43130_digital =
+ 	.set_sysclk		= cs43130_component_set_sysclk,
+ 	.set_pll		= cs43130_set_pll,
+ 	.idle_bias_on		= 1,
+-	.use_pmdown_time	= 1,
+ 	.endianness		= 1,
+ 	/* Don't take into account the ending analog widgets and routes */
+ 	.dapm_widgets		= hp_widgets,
+@@ -2465,7 +2464,6 @@ static const struct snd_soc_component_driver soc_component_dev_cs43130_analog =
+ 	.set_sysclk		= cs43130_component_set_sysclk,
+ 	.set_pll		= cs43130_set_pll,
+ 	.idle_bias_on		= 1,
+-	.use_pmdown_time	= 1,
+ 	.endianness		= 1,
+ 	.dapm_widgets		= hp_widgets,
+ 	.num_dapm_widgets	= ARRAY_SIZE(hp_widgets),
+-- 
+2.39.5
+

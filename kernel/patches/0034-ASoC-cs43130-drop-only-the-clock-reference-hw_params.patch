@@ -1,4 +1,4 @@
-From 33d67eec82f0048f8e3da2bffe5d238a84c03b8e Mon Sep 17 00:00:00 2001
+From 115a026ae95dd2ae9d71c65ff419a362819675a9 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 11:34:38 +0000
 Subject: [PATCH 34/62] ASoC: cs43130: drop only the clock reference hw_params
@@ -21,7 +21,7 @@ takes a second reference either.
  2 files changed, 17 insertions(+)
 
 diff --git a/sound/soc/codecs/cs43130.c b/sound/soc/codecs/cs43130.c
-index eff1501..6685ec6 100644
+index ac0faa0..18f9e81 100644
 --- a/sound/soc/codecs/cs43130.c
 +++ b/sound/soc/codecs/cs43130.c
 @@ -827,6 +827,9 @@ static int cs43130_dsd_hw_params(struct snd_pcm_substream *substream,

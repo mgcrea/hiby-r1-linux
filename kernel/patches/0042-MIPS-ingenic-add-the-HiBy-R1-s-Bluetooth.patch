@@ -1,4 +1,4 @@
-From a312192263d6cb02d52e360232f3036800ef6e85 Mon Sep 17 00:00:00 2001
+From 0a16c32afcaf8b9f7daa56b1930ff410e523dd2f Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 20:33:27 +0000
 Subject: [PATCH 42/62] MIPS: ingenic: add the HiBy R1's Bluetooth

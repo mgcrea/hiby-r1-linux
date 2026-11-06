@@ -1,4 +1,4 @@
-From fc5f1a61742bbd07d51682d496a07639ad51f377 Mon Sep 17 00:00:00 2001
+From 4705aab8e67bf764124d29729922e41d7af49704 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 04:48:08 +0000
 Subject: [PATCH 46/62] clk: ingenic: x1600: take the USB PHY out of suspend

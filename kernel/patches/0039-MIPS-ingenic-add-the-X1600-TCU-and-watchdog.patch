@@ -1,4 +1,4 @@
-From 8796d6a612a9cc80ddbbe3507e2d90d4ae1600d5 Mon Sep 17 00:00:00 2001
+From 875182ba8265c74cd45657075bab74c5b8636780 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 12:24:46 +0000
 Subject: [PATCH 39/62] MIPS: ingenic: add the X1600 TCU and watchdog
