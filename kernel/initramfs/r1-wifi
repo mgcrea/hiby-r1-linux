@@ -60,7 +60,7 @@ on)
 	wpa_supplicant -B -Dnl80211 -iwlan0 -c$CONF -P/tmp/wpa_supplicant.pid || exit 1
 	# One quick try, then keeps asking in the background every 3 s until a
 	# network answers (the first try usually goes before the association).
-	udhcpc -b -t 1 -T 1 -A 3 -i wlan0 -s /sbin/r1-dhcp -p /tmp/udhcpc.pid -x hostname:hiby-r1 > /dev/null
+	udhcpc -b -t 1 -T 1 -A 3 -i wlan0 -s /sbin/r1-dhcp -p /tmp/udhcpc.pid -x hostname:$(hostname) > /dev/null
 	echo "Wi-Fi on"
 	;;
 off)
