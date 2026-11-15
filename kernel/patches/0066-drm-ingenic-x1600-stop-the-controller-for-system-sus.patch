@@ -1,0 +1,64 @@
+From d4ea2da428040dfb18b28cc554d98c925144ffba Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Sun, 15 Nov 2026 16:42:49 +0000
+Subject: [PATCH 66/67] drm/ingenic: x1600: stop the controller for system
+ suspend
+
+The controller keeps reading its frame from RAM while it runs, and the
+RAM goes to self-refresh in a suspend to RAM: suspend and resume the
+mode config, which stops it and brings it back.
+---
+ drivers/gpu/drm/ingenic/ingenic-dpu-x1600.c | 23 +++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/drivers/gpu/drm/ingenic/ingenic-dpu-x1600.c b/drivers/gpu/drm/ingenic/ingenic-dpu-x1600.c
+index e09445d..037ed89 100644
+--- a/drivers/gpu/drm/ingenic/ingenic-dpu-x1600.c
++++ b/drivers/gpu/drm/ingenic/ingenic-dpu-x1600.c
+@@ -41,6 +41,7 @@
+ #include <drm/drm_framebuffer.h>
+ #include <drm/drm_gem_dma_helper.h>
+ #include <drm/drm_gem_framebuffer_helper.h>
++#include <drm/drm_modeset_helper.h>
+ #include <drm/drm_of.h>
+ #include <drm/drm_plane.h>
+ #include <drm/drm_print.h>
+@@ -717,6 +718,27 @@ static void x1600_lcd_shutdown(struct platform_device *pdev)
+ 	drm_atomic_helper_shutdown(&lcd->drm);
+ }
+ 
++/*
++ * The controller reads its frame from RAM until it is stopped: stop it
++ * before the RAM goes to self-refresh.
++ */
++static int x1600_lcd_suspend(struct device *dev)
++{
++	struct x1600_lcd *lcd = dev_get_drvdata(dev);
++
++	return drm_mode_config_helper_suspend(&lcd->drm);
++}
++
++static int x1600_lcd_resume(struct device *dev)
++{
++	struct x1600_lcd *lcd = dev_get_drvdata(dev);
++
++	return drm_mode_config_helper_resume(&lcd->drm);
++}
++
++static DEFINE_SIMPLE_DEV_PM_OPS(x1600_lcd_pm_ops,
++				x1600_lcd_suspend, x1600_lcd_resume);
++
+ static const struct of_device_id x1600_lcd_of_match[] = {
+ 	{ .compatible = "ingenic,x1600-dpu" },
+ 	{ }
+@@ -727,6 +749,7 @@ static struct platform_driver x1600_lcd_platform_driver = {
+ 	.driver = {
+ 		.name = "ingenic-dpu-x1600",
+ 		.of_match_table = x1600_lcd_of_match,
++		.pm = pm_sleep_ptr(&x1600_lcd_pm_ops),
+ 	},
+ 	.probe = x1600_lcd_probe,
+ 	.remove = x1600_lcd_remove,
+-- 
+2.39.5
+

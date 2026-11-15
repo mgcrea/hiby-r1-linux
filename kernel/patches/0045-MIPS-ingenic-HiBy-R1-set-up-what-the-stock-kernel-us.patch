@@ -1,7 +1,7 @@
-From 49ec74dceb54fa444c01f03ac895990f46a71de3 Mon Sep 17 00:00:00 2001
+From d831b671d88418e7b1e45dfa0b0da062dd169366 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 04:01:44 +0000
-Subject: [PATCH 45/62] MIPS: ingenic: HiBy R1: set up what the stock kernel
+Subject: [PATCH 45/67] MIPS: ingenic: HiBy R1: set up what the stock kernel
  used to
 
 Booted without the stock kernel first (from the boot ROM's USB mode), the

@@ -1,7 +1,7 @@
-From 27bb5a252d4434a223e8c03e7e712bed2f9787d7 Mon Sep 17 00:00:00 2001
+From 30a0d8fb26a399d01fb40ff1fc48aaf27e2fa074 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sat, 24 Oct 2026 07:30:24 +0000
-Subject: [PATCH 51/62] dt-bindings: spi: add the Ingenic X1600 SFC
+Subject: [PATCH 51/67] dt-bindings: spi: add the Ingenic X1600 SFC
 
 The X1600's SPI flash controller, which holds its boot flash.
 ---

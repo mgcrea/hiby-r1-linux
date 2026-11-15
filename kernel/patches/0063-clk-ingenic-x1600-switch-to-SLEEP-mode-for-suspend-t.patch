@@ -1,0 +1,40 @@
+From d7888e384dbad1d9020de1c081e92cf8a0ac7702 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Sun, 15 Nov 2026 14:49:09 +0000
+Subject: [PATCH 63/67] clk: ingenic: x1600: switch to SLEEP mode for suspend
+ to RAM
+
+Register the Ingenic CGU syscore ops, as the X1000 does: LCR.LPM selects
+SLEEP for the wait instruction of a suspend to RAM, which stops the PLLs
+and puts the DRAM in self-refresh (manual 11.2.4).
+---
+ drivers/clk/ingenic/x1600-cgu.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/clk/ingenic/x1600-cgu.c b/drivers/clk/ingenic/x1600-cgu.c
+index d4a86c4..7234f7b 100644
+--- a/drivers/clk/ingenic/x1600-cgu.c
++++ b/drivers/clk/ingenic/x1600-cgu.c
+@@ -18,6 +18,7 @@
+ #include <dt-bindings/clock/ingenic,x1600-cgu.h>
+ 
+ #include "cgu.h"
++#include "pm.h"
+ 
+ /* CGU register offsets */
+ #define CGU_REG_CPCCR		0x00
+@@ -542,5 +543,11 @@ static void __init x1600_cgu_init(struct device_node *np)
+ 	retval = ingenic_cgu_register_clocks(cgu);
+ 	if (retval)
+ 		pr_err("%s: failed to register CGU Clocks\n", __func__);
++
++	/*
++	 * Suspend to RAM: LCR.LPM = SLEEP, so the wait instruction stops the
++	 * PLLs and puts the DRAM in self-refresh (manual 11.2.4).
++	 */
++	ingenic_cgu_register_syscore(cgu);
+ }
+ CLK_OF_DECLARE_DRIVER(x1600_cgu, "ingenic,x1600-cgu", x1600_cgu_init);
+-- 
+2.39.5
+

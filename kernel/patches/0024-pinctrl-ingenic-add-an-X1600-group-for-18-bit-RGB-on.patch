@@ -1,7 +1,7 @@
-From e485138e0e51ef028d0db164775ea16183e939b3 Mon Sep 17 00:00:00 2001
+From 48628f48193b9ab4891b95df5c1f196fd7805789 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 08:59:17 +0000
-Subject: [PATCH 24/62] pinctrl: ingenic: add an X1600 group for 18-bit RGB on
+Subject: [PATCH 24/67] pinctrl: ingenic: add an X1600 group for 18-bit RGB on
  the top lines
 
 Boards that wire an 18-bit panel to the six most significant lines of each

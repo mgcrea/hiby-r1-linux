@@ -1,7 +1,7 @@
-From 5d19e970090c3dea21ff784af1a27be130aa6c62 Mon Sep 17 00:00:00 2001
+From 42967c4cc8d148cb8680601406ff0707191e9c14 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:00:55 +0000
-Subject: [PATCH 32/62] MIPS: ingenic: add the X1600 display and PWM
+Subject: [PATCH 32/67] MIPS: ingenic: add the X1600 display and PWM
  controllers and the HiBy R1's display
 
 Describe the X1600's LCD and PWM controllers, and drive the HiBy R1's screen

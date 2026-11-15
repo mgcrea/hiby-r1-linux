@@ -1,7 +1,7 @@
-From eb6c80ae178aeb1b58cac2e6f25821cba7a26f9d Mon Sep 17 00:00:00 2001
+From 7a3ac8cef5069df083ad2dc774740fb2b45bf3cf Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:09:57 +0000
-Subject: [PATCH 30/62] dt-bindings: pwm: add the Ingenic X1600 PWM controller
+Subject: [PATCH 30/67] dt-bindings: pwm: add the Ingenic X1600 PWM controller
 
 The X1600 has an eight-channel PWM controller of its own, separate from
 the TCU timers that drive the PWMs of earlier Ingenic SoCs

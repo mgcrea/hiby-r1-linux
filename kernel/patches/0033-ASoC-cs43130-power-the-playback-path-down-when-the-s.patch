@@ -1,7 +1,7 @@
-From 08376b77978c82d2a3b9aaa45cf1c3df11de3e69 Mon Sep 17 00:00:00 2001
+From c6522da59f541c0c15b51ed9d12fc10fec150b00 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 11:18:15 +0000
-Subject: [PATCH 33/62] ASoC: cs43130: power the playback path down when the
+Subject: [PATCH 33/67] ASoC: cs43130: power the playback path down when the
  stream closes
 
 With use_pmdown_time set, DAPM keeps the playback path powered and

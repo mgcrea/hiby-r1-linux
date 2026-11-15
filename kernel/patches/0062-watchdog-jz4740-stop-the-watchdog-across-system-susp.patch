@@ -1,0 +1,108 @@
+From 2b39877d6c421decf97c9aafb818f0c9d84e1fa0 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Sun, 15 Nov 2026 14:49:09 +0000
+Subject: [PATCH 62/67] watchdog: jz4740: stop the watchdog across system
+ suspend
+
+Userspace feeds the watchdog and is frozen across a system suspend, while
+the counter keeps going as long as its clock runs: the board resets about
+one timeout into any suspend. Stop it in suspend and restart it, from
+zero, in resume.
+
+keep_in_suspend (writable in sysfs) leaves it running, as a safety net
+while bringing suspend up: a resume that never comes back resets the
+board.
+---
+ drivers/watchdog/jz4740_wdt.c | 49 +++++++++++++++++++++++++++++++++++
+ 1 file changed, 49 insertions(+)
+
+diff --git a/drivers/watchdog/jz4740_wdt.c b/drivers/watchdog/jz4740_wdt.c
+index 86470e2..1e8eb06 100644
+--- a/drivers/watchdog/jz4740_wdt.c
++++ b/drivers/watchdog/jz4740_wdt.c
+@@ -39,12 +39,23 @@ MODULE_PARM_DESC(heartbeat,
+ 		__MODULE_STRING(MAX_HEARTBEAT) ", default "
+ 		__MODULE_STRING(DEFAULT_HEARTBEAT));
+ 
++/*
++ * Debugging suspend: leave the watchdog counting while the system sleeps,
++ * so a resume that never comes back resets the board (its clock must keep
++ * running in sleep for that: on the X1600, OPCR.O1SE).
++ */
++static bool keep_in_suspend;
++module_param(keep_in_suspend, bool, 0644);
++MODULE_PARM_DESC(keep_in_suspend,
++		 "Leave the watchdog running across system suspend");
++
+ struct jz4740_wdt_drvdata {
+ 	struct watchdog_device wdt;
+ 	struct regmap *map;
+ 	struct clk *clk;
+ 	unsigned long clk_rate;
+ 	bool clear_in_tcsr;
++	bool stopped_for_suspend;
+ };
+ 
+ static int jz4740_wdt_ping(struct watchdog_device *wdt_dev)
+@@ -133,6 +144,42 @@ static const struct watchdog_ops jz4740_wdt_ops = {
+ 	.restart = jz4740_wdt_restart,
+ };
+ 
++/*
++ * Userspace, which feeds the watchdog, is frozen across a system suspend,
++ * and the counter keeps going while the clock does: stop it.
++ */
++static int jz4740_wdt_suspend(struct device *dev)
++{
++	struct jz4740_wdt_drvdata *drvdata = dev_get_drvdata(dev);
++	struct watchdog_device *wdd = &drvdata->wdt;
++
++	if (keep_in_suspend ||
++	    !(watchdog_active(wdd) || watchdog_hw_running(wdd)))
++		return 0;
++
++	regmap_write(drvdata->map, TCU_REG_WDT_TCER, 0);
++	drvdata->stopped_for_suspend = true;
++
++	return 0;
++}
++
++static int jz4740_wdt_resume(struct device *dev)
++{
++	struct jz4740_wdt_drvdata *drvdata = dev_get_drvdata(dev);
++
++	if (!drvdata->stopped_for_suspend)
++		return 0;
++
++	drvdata->stopped_for_suspend = false;
++	jz4740_wdt_ping(&drvdata->wdt);
++	regmap_write(drvdata->map, TCU_REG_WDT_TCER, TCU_WDT_TCER_TCEN);
++
++	return 0;
++}
++
++static DEFINE_SIMPLE_DEV_PM_OPS(jz4740_wdt_pm_ops,
++				jz4740_wdt_suspend, jz4740_wdt_resume);
++
+ #ifdef CONFIG_OF
+ static const struct of_device_id jz4740_wdt_of_matches[] = {
+ 	{ .compatible = "ingenic,jz4740-watchdog", },
+@@ -186,6 +233,7 @@ static int jz4740_wdt_probe(struct platform_device *pdev)
+ 	watchdog_set_drvdata(jz4740_wdt, drvdata);
+ 
+ 	drvdata->clear_in_tcsr = (bool)device_get_match_data(dev);
++	platform_set_drvdata(pdev, drvdata);
+ 
+ 	drvdata->map = device_node_to_regmap(dev->parent->of_node);
+ 	if (IS_ERR(drvdata->map)) {
+@@ -213,6 +261,7 @@ static struct platform_driver jz4740_wdt_driver = {
+ 	.driver = {
+ 		.name = "jz4740-wdt",
+ 		.of_match_table = of_match_ptr(jz4740_wdt_of_matches),
++		.pm = pm_sleep_ptr(&jz4740_wdt_pm_ops),
+ 	},
+ };
+ 
+-- 
+2.39.5
+

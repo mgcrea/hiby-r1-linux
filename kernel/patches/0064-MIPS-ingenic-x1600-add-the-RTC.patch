@@ -1,0 +1,42 @@
+From d9c2d276ccd25951cc06c3c079dbf4ddf286a942 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Sun, 15 Nov 2026 14:49:10 +0000
+Subject: [PATCH 64/67] MIPS: ingenic: x1600: add the RTC
+
+The JZ4780 register map, on intc 32, clocked by the 32 kHz oscillator
+gate: the driver sets the 1 Hz divider from the clock rate, and the RTCLK
+mux the X1000 names may run from EXCLK / 512.
+---
+ arch/mips/boot/dts/ingenic/x1600.dtsi | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/arch/mips/boot/dts/ingenic/x1600.dtsi b/arch/mips/boot/dts/ingenic/x1600.dtsi
+index 04b5bda..529d72b 100644
+--- a/arch/mips/boot/dts/ingenic/x1600.dtsi
++++ b/arch/mips/boot/dts/ingenic/x1600.dtsi
+@@ -303,6 +303,22 @@ wdt: watchdog@0 {
+ 		};
+ 	};
+ 
++	/*
++	 * The JZ4780's register map (WENR at 0x3c). Its clock is the gate on
++	 * the 32 kHz oscillator, not RTCLK as on the X1000: the driver sets the
++	 * 1 Hz divider from this clock's rate, and RTCLK may be EXCLK / 512.
++	 */
++	rtc: rtc@10003000 {
++		compatible = "ingenic,x1600-rtc", "ingenic,jz4780-rtc";
++		reg = <0x10003000 0x4c>;
++
++		interrupt-parent = <&intc>;
++		interrupts = <32>;
++
++		clocks = <&cgu X1600_CLK_RTC>;
++		clock-names = "rtc";
++	};
++
+ 	lcd: lcd-controller@13050000 {
+ 		compatible = "ingenic,x1600-dpu";
+ 		reg = <0x13050000 0x10000>;
+-- 
+2.39.5
+

@@ -1,0 +1,189 @@
+From 75fb0a9316f7f4054b18c64febb47f890e38f7c9 Mon Sep 17 00:00:00 2001
+From: Olivier Louvignes <olivier@mgcrea.io>
+Date: Sun, 15 Nov 2026 18:55:36 +0000
+Subject: [PATCH 65/67] MIPS: ingenic: X1600 suspend to RAM
+
+The X1600 does not come back from SLEEP with the DRAM usable: a plain
+wait with LCR.LPM = SLEEP never returns (the watchdog reset the board
+every time). Ingenic 4.4 kernel puts the DRAM in self-refresh by hand
+and, after the wait, brings the DDR PHY back (its PLL, DFI init and
+auto calibration) from code in the TCSM, before any DRAM access.
+
+Do the same, from a leaf routine copied to the PDMA TCSM before each
+suspend, without the vendor CPU and L2 power-down: the core goes on
+after the wait and needs no context save. Keep EXCLK running in sleep
+(OPCR.O1SE): with it stopped the board did not always wake, by RTC or
+by key.
+---
+ arch/mips/generic/board-ingenic.c | 153 +++++++++++++++++++++++++++++-
+ 1 file changed, 152 insertions(+), 1 deletion(-)
+
+diff --git a/arch/mips/generic/board-ingenic.c b/arch/mips/generic/board-ingenic.c
+index d6b0e25..aa56d01 100644
+--- a/arch/mips/generic/board-ingenic.c
++++ b/arch/mips/generic/board-ingenic.c
+@@ -177,9 +177,160 @@ static void ingenic_halt(void)
+ 		ingenic_wait_instr();
+ }
+ 
++/*
++ * X1600 suspend to RAM, after Ingenic's 4.4 kernel (soc-x1600/pm.c) without
++ * its CPU power-down: the core keeps its state and goes on after the wait,
++ * but the DRAM is only usable again once the DDR PHY has its PLL back, the
++ * DFI is initialised and the PHY recalibrated. So that part runs from the
++ * PDMA's TCSM, uncached: a leaf routine with no calls, no stack and only
++ * PC-relative branches, copied there before each suspend. Check that it
++ * stays so (objdump: no jal/j, no sp or gp access) when changing it.
++ */
++#define X1600_TCSM		0xb3422000
++#define X1600_TCSM_COPY		4096
++#define X1600_R32(a)		(*(volatile u32 *)(a))
++#define X1600_DDRC_STATUS	0xb34f0000
++#define X1600_DDRC_STATUS_SR	BIT(2)
++#define X1600_DDRC_CTRL		0xb34f0008
++#define X1600_DDRC_CTRL_SR	BIT(5)
++#define X1600_DDRC_CTRL_LP	(GENMASK(14, 12) | BIT(6))	/* PDT, DPD */
++#define X1600_DDRC_DLP		0xb34f00bc
++#define X1600_DDRC_BUFEN	0xb3012034
++#define X1600_DDRC_DFI		0xb301208c
++#define X1600_DDRP(n)		(0xb3011000 + (n) * 4)
++#define X1600_DDRP_TRAIN	X1600_DDRP(0x02)
++#define X1600_DDRP_CALIB_DONE	X1600_DDRP(0x43)
++#define X1600_DDRP_AUTOSR	X1600_DDRP(0xc1)	/* as the vendor code has it */
++
++static __always_inline void x1600_spin(u32 n)
++{
++	while (n--)
++		asm volatile("nop");
++}
++
++/* Returns the steps that timed out: bits 0 to 4. */
++static noinline u32 x1600_sleep_tcsm(void)
++{
++	u32 ctrl, lp, dlp, autosr, v, n, c0, c1, st = 0;
++
++	ctrl = X1600_R32(X1600_DDRC_CTRL);
++	lp = ctrl & X1600_DDRC_CTRL_LP;
++	dlp = X1600_R32(X1600_DDRC_DLP);
++	autosr = X1600_R32(X1600_DDRP_AUTOSR);
++
++	X1600_R32(X1600_DDRC_CTRL) = ctrl & ~X1600_DDRC_CTRL_LP;
++	X1600_R32(X1600_DDRC_DLP) = 0;
++	X1600_R32(X1600_DDRP_AUTOSR) = 0;
++	(void)X1600_R32(0xa0000000);
++
++	/* DRAM to self-refresh */
++	X1600_R32(X1600_DDRC_CTRL) |= X1600_DDRC_CTRL_SR;
++	n = 200000;
++	while (!(X1600_R32(X1600_DDRC_STATUS) & X1600_DDRC_STATUS_SR) && --n)
++		;
++	if (!n)
++		st |= 0x01;
++
++	/* bufferen_core low, dfi_init_start, then the PHY's PLL off */
++	X1600_R32(X1600_DDRC_BUFEN) |= BIT(2);
++	X1600_R32(X1600_DDRC_DFI) |= BIT(0);
++	x1600_spin(32);
++	X1600_R32(X1600_DDRP(0x21)) |= BIT(1);
++
++	asm volatile(".set push\n\t.set mips32r2\n\twait\n\tnop\n\tnop\n\tnop\n\t.set pop");
++
++	/* the PHY's PLL on, and locked */
++	X1600_R32(X1600_DDRP(0x21)) &= ~BIT(1);
++	n = 200000;
++	while (!(X1600_R32(X1600_DDRP(0x42)) & BIT(3)) && --n)
++		;
++	if (!n)
++		st |= 0x02;
++
++	/* dfi_init_start low, wait for dfi_init_complete */
++	X1600_R32(X1600_DDRC_DFI) &= ~BIT(0);
++	n = 200000;
++	while (!(X1600_R32(X1600_DDRC_DFI) & BIT(1)) && --n)
++		;
++	if (!n)
++		st |= 0x04;
++
++	X1600_R32(X1600_DDRC_BUFEN) &= ~BIT(2);
++
++	/* out of self-refresh */
++	X1600_R32(X1600_DDRC_CTRL) &= ~X1600_DDRC_CTRL_SR;
++	n = 200000;
++	while ((X1600_R32(X1600_DDRC_STATUS) & X1600_DDRC_STATUS_SR) && --n)
++		;
++	if (!n)
++		st |= 0x08;
++	x1600_spin(1000);
++
++	/* the PHY's auto calibration, then its cycle select from the result */
++	v = X1600_R32(X1600_DDRP_TRAIN);
++	X1600_R32(X1600_DDRP_TRAIN) = v & ~BIT(1);
++	v = X1600_R32(X1600_DDRP_TRAIN);
++	X1600_R32(X1600_DDRP_TRAIN) = v | BIT(0);
++	n = 0x200000;
++	while ((X1600_R32(X1600_DDRP_CALIB_DONE) & 0x13) != 3 && --n)
++		;
++	if (!n)
++		st |= 0x10;
++	v = X1600_R32(X1600_DDRP_TRAIN);
++	X1600_R32(X1600_DDRP_TRAIN) = v & ~BIT(0);
++
++	c0 = (X1600_R32(X1600_DDRP(0x74)) >> 4) & 7;
++	c1 = (X1600_R32(X1600_DDRP(0x75)) >> 4) & 7;
++	v = X1600_R32(X1600_DDRP(0x0a)) & ~(7 << 1);
++	X1600_R32(X1600_DDRP(0x0a)) = v | ((c0 > c1 ? c0 : c1) + 1) << 1;
++	X1600_R32(X1600_DDRP(0x01)) |= BIT(6);
++
++	X1600_R32(X1600_DDRP_AUTOSR) = autosr;
++	X1600_R32(X1600_DDRC_DLP) = dlp;
++	X1600_R32(X1600_DDRC_CTRL) |= lp;
++
++	return st;
++}
++
++static void x1600_pm_enter(void)
++{
++	void __iomem *cgu = (void __iomem *)CKSEG1ADDR(0x10000000);
++	u32 (*sleep)(void) = (void *)X1600_TCSM;
++	u32 *src = (u32 *)x1600_sleep_tcsm;
++	u32 *dst = (u32 *)X1600_TCSM;
++	u32 opcr, v, st;
++	int i;
++
++	/* The PDMA's clock, for its TCSM. */
++	writel(readl(cgu + 0x20) & ~BIT(21), cgu + 0x20);
++	for (i = 0; i < X1600_TCSM_COPY / 4; i++)
++		dst[i] = src[i];
++
++	/*
++	 * As the vendor kernel: MASK_INT, the SD bits cleared after the sleep,
++	 * no CPU or L2 power-down, and ERCS: the CPM, INTC and TCU on the
++	 * 32 kHz clock. Unlike it, O1SE: EXCLK keeps running in sleep. With
++	 * EXCLK stopped the R1 didn't always wake, by RTC or by Power
++	 * (2026-11-15); with it, 31 suspends in 31 woke.
++	 */
++	opcr = readl(cgu + 0x24);
++	v = (opcr & ~(BIT(31) | BIT(26) | BIT(3))) |
++	    BIT(30) | BIT(22) | BIT(21) | BIT(20) | BIT(4) | BIT(2);
++	writel(v, cgu + 0x24);
++
++	st = sleep();
++
++	writel(opcr, cgu + 0x24);
++	if (st)
++		pr_warn("PM: X1600: DDR steps timed out on resume: %#x\n", st);
++}
++
+ static int ingenic_pm_enter(suspend_state_t state)
+ {
+-	ingenic_wait_instr();
++	if (mips_machtype == MACH_INGENIC_X1600)
++		x1600_pm_enter();
++	else
++		ingenic_wait_instr();
+ 
+ 	return 0;
+ }
+-- 
+2.39.5
+

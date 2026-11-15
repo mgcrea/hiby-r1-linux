@@ -1,7 +1,7 @@
-From b60f8f6f300c3cf2d5e9def23870399e70cd268c Mon Sep 17 00:00:00 2001
+From cb027c1fb6b1118b83bfd28a849ef96cff7aaef0 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 09:05:52 +0000
-Subject: [PATCH 27/62] dt-bindings: vendor-prefixes: add HiBy
+Subject: [PATCH 27/67] dt-bindings: vendor-prefixes: add HiBy
 
 HiBy makes digital audio players, among them the R1.
 ---

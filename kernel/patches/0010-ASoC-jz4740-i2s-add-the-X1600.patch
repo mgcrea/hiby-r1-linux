@@ -1,7 +1,7 @@
-From 43c334c79a8259058a9635c83fdbd3ffe46f9ada Mon Sep 17 00:00:00 2001
+From c6871864d874c328c917ba7da71e6e87a93c8652 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 07:20:53 +0000
-Subject: [PATCH 10/62] ASoC: jz4740-i2s: add the X1600
+Subject: [PATCH 10/67] ASoC: jz4740-i2s: add the X1600
 
 The X1600's AIC is the X1000's, with two differences.
 

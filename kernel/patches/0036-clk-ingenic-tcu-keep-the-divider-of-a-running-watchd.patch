@@ -1,7 +1,7 @@
-From ded6258d3376f46b933bd1fab97510ad140bd0f6 Mon Sep 17 00:00:00 2001
+From e5d5c55f5280179e8b38f079d663cda4a2b1238c Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 12:50:03 +0000
-Subject: [PATCH 36/62] clk: ingenic: tcu: keep the divider of a running
+Subject: [PATCH 36/67] clk: ingenic: tcu: keep the divider of a running
  watchdog
 
 Registering the TCU clocks resets each channel's TCSR to its default

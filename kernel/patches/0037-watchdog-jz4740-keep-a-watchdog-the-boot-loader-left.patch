@@ -1,7 +1,7 @@
-From 6d22be26177378d0691f1c8504ba624b6e800e22 Mon Sep 17 00:00:00 2001
+From 87265dcdb39d9fc06f13810532e4ab4325f85f06 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 12:24:01 +0000
-Subject: [PATCH 37/62] watchdog: jz4740: keep a watchdog the boot loader left
+Subject: [PATCH 37/67] watchdog: jz4740: keep a watchdog the boot loader left
  running
 
 A boot loader may hand over with the watchdog enabled, and the driver then

@@ -1,7 +1,7 @@
-From 683dab0defbe5ae39df54c263d758f68a94ec9b7 Mon Sep 17 00:00:00 2001
+From 06eb59e8acd9df8b2ad52cbe569dbfdcab54168f Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sun, 25 Oct 2026 09:55:22 +0000
-Subject: [PATCH 58/62] MIPS: kexec: write the new kernel back from the caches
+Subject: [PATCH 58/67] MIPS: kexec: write the new kernel back from the caches
  before entering it
 
 relocate_new_kernel copies the new kernel through KSEG0, so the last

@@ -1,7 +1,7 @@
-From e37663f92283b665ea28fef5614446863dae24f9 Mon Sep 17 00:00:00 2001
+From 4a42d6242950f7822e902c27cd0aa7a0b2b4deda Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Sun, 25 Oct 2026 10:21:25 +0000
-Subject: [PATCH 59/62] mmc: jz4740: keep the clock running on a host with SDIO
+Subject: [PATCH 59/67] mmc: jz4740: keep the clock running on a host with SDIO
  interrupts
 
 Above 25 MHz the driver turns on the controller's low-power mode, which

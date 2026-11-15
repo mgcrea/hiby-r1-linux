@@ -1,7 +1,7 @@
-From 0e3ee99e28e9886db92e894332bf7471f915f3c0 Mon Sep 17 00:00:00 2001
+From 8805d94e890cf0b3cc95cd2608d7619e63d1245c Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 05:30:36 +0000
-Subject: [PATCH 03/62] MIPS: cpu-probe: recognise the XBurst core of the
+Subject: [PATCH 03/67] MIPS: cpu-probe: recognise the XBurst core of the
  Ingenic X1600
 
 The X1600 reports PRId 0x00d00000: company Ingenic D0, implementation 0,

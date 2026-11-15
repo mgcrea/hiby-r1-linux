@@ -1,7 +1,7 @@
-From 45b09bfc9793eed0279b7796d953b5f553d46312 Mon Sep 17 00:00:00 2001
+From 066180827156c81f29471c6293f9d61eee0e0dd6 Mon Sep 17 00:00:00 2001
 From: Olivier Louvignes <olivier@mgcrea.io>
 Date: Fri, 23 Oct 2026 08:40:35 +0000
-Subject: [PATCH 21/62] power: supply: axp20x_battery: add the AXP2101
+Subject: [PATCH 21/67] power: supply: axp20x_battery: add the AXP2101
 
 Program the AXP2101's charger from the monitored battery: the end of
 charge voltage (CV_CHG_SET, 4.0 to 4.4 V), the constant charge current
